@@ -179,7 +179,7 @@
      <item>
       <widget class="QDialogButtonBox" name="buttonBox">
        <property name="standardButtons">
-        <set>QDialogButtonBox::StandardButton::Close</set>
+        <set>QDialogButtonBox::StandardButton::Ok</set>
        </property>
       </widget>
      </item>
