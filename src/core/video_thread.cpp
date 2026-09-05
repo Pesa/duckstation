@@ -726,6 +726,7 @@ bool VideoThread::CreateDeviceOnThread(RenderAPI api, bool fullscreen, bool star
     g_gpu_device.reset();
     if (wi.has_value())
       Host::ReleaseRenderWindow();
+    UpdateRunIdle();
 
     Error::SetStringFmt(
       error,
@@ -752,6 +753,7 @@ bool VideoThread::CreateDeviceOnThread(RenderAPI api, bool fullscreen, bool star
     g_gpu_device.reset();
     if (wi.has_value())
       Host::ReleaseRenderWindow();
+    UpdateRunIdle();
     return false;
   }
 
