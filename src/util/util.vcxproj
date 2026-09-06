@@ -5,6 +5,7 @@
     <ClInclude Include="animated_image.h" />
     <ClInclude Include="dyn_libjpeg.h" />
     <ClInclude Include="dyn_libwebp.h" />
+    <ClInclude Include="dyn_libzip.h" />
     <ClInclude Include="dyn_sdl.h" />
     <ClInclude Include="dyn_sqlite.h" />
     <ClInclude Include="http_cache.h" />

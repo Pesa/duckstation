@@ -13,6 +13,7 @@
 #include "host.h"
 #include "system.h"
 
+#include "util/dyn_libzip.h"
 #include "util/imgui_manager.h"
 #include "util/translation.h"
 #include "util/zip_helpers.h"
@@ -104,12 +105,13 @@ private:
 class CheatArchive
 {
 public:
+#if defined(_DEBUG) || defined(_DEVEL)
   ~CheatArchive()
   {
-    // zip has to be destroyed before data
-    m_zip.reset();
-    m_data.deallocate();
+    DebugAssert(!m_zip);
+    DebugAssert(m_data.empty());
   }
+#endif
 
   ALWAYS_INLINE bool IsOpen() const { return static_cast<bool>(m_zip); }
 
@@ -133,8 +135,8 @@ public:
     }
 
     m_data = std::move(data.value());
-    m_zip = ZipHelpers::OpenManagedZipBuffer(m_data.data(), m_data.size(), 0, false, &error);
-    if (!m_zip) [[unlikely]]
+    if (!g_dyn_libzip.Open(&error) ||
+        !(m_zip = ZipHelpers::OpenManagedZipBuffer(m_data.data(), m_data.size(), 0, false, &error))) [[unlikely]]
     {
       ERROR_LOG("Failed to open cheat archive {}: {}", name, error.GetDescription());
       return false;
@@ -150,6 +152,13 @@ public:
     if (!ret.has_value())
       DEV_LOG("Failed to read {} from zip: {}", name, error.GetDescription());
     return ret;
+  }
+
+  void Close()
+  {
+    // zip has to be destroyed before data
+    m_zip.reset();
+    m_data.deallocate();
   }
 
 private:
@@ -463,6 +472,13 @@ void Cheats::EnumerateChtFiles(const std::string_view serial, std::optional<Game
       }
     }
   }
+}
+
+void Cheats::UnloadDatabase()
+{
+  const std::unique_lock lock(s_archive_locals.zip_mutex);
+  s_archive_locals.cheats_zip.Close();
+  s_archive_locals.patches_zip.Close();
 }
 
 std::string_view Cheats::CodeInfo::GetNamePart() const

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 
 #include "zip_helpers.h"
+#include "dyn_libzip.h"
 
 #include "common/error.h"
 #include "common/file_system.h"
@@ -9,7 +10,6 @@
 #include "common/progress_callback.h"
 
 #include <fmt/format.h>
-#include <zip.h>
 
 LOG_CHANNEL(Ungrouped);
 
@@ -18,7 +18,7 @@ void ZipHelpers::ZipFileDeleter::operator()(zip_file_t* zf)
   if (!zf)
     return;
 
-  zip_fclose(zf);
+  g_dyn_libzip.zip_fclose(zf);
 }
 
 void ZipHelpers::ZipDeleter::operator()(zip_t* zf)
@@ -26,25 +26,25 @@ void ZipHelpers::ZipDeleter::operator()(zip_t* zf)
   if (!zf)
     return;
 
-  const int err = zip_close(zf);
+  const int err = g_dyn_libzip.zip_close(zf);
   if (err != 0)
   {
     ERROR_LOG("Failed to close zip file: {}", err);
-    zip_discard(zf);
+    g_dyn_libzip.zip_discard(zf);
   }
 }
 
 void ZipHelpers::SetErrorObject(Error* error, std::string_view msg, zip_error_t* ze, bool finalize /*= true*/)
 {
-  Error::SetStringFmt(error, "{}{}", msg, ze ? zip_error_strerror(ze) : "UNKNOWN");
+  Error::SetStringFmt(error, "{}{}", msg, ze ? g_dyn_libzip.zip_error_strerror(ze) : "UNKNOWN");
   if (finalize && ze)
-    zip_error_fini(ze);
+    g_dyn_libzip.zip_error_fini(ze);
 }
 
 ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipFile(const char* filename, int flags, Error* error /*= nullptr*/)
 {
   zip_error_t ze;
-  zip_source_t* zs = zip_source_file_create(filename, 0, 0, &ze);
+  zip_source_t* zs = g_dyn_libzip.zip_source_file_create(filename, 0, 0, &ze);
   zip_t* zip;
   if (!zs)
   {
@@ -53,11 +53,11 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipFile(const char* filename, int
   }
   else
   {
-    if (!(zip = zip_open_from_source(zs, flags, &ze)))
+    if (!(zip = g_dyn_libzip.zip_open_from_source(zs, flags, &ze)))
     {
       // have to clean up source
       SetErrorObject(error, "zip_open_from_source() failed: {}", &ze);
-      zip_source_free(zs);
+      g_dyn_libzip.zip_source_free(zs);
     }
   }
 
@@ -67,6 +67,9 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipFile(const char* filename, int
 namespace ZipHelpers {
 static zip_int64_t CFileSourceCallback(void* userdata, void* data, zip_uint64_t len, zip_source_cmd_t cmd)
 {
+#define LOCAL_ZIP_SOURCE_GET_ARGS(type, data, len, error)                                                              \
+  ((len) < sizeof(type) ? g_dyn_libzip.zip_error_set((error), ZIP_ER_INVAL, 0), (type*)NULL : (type*)(data))
+
   std::FILE* fp = static_cast<std::FILE*>(userdata);
   switch (cmd)
   {
@@ -90,7 +93,7 @@ static zip_int64_t CFileSourceCallback(void* userdata, void* data, zip_uint64_t 
     case ZIP_SOURCE_STAT:
     {
       FILESYSTEM_STAT_DATA st;
-      zip_stat_t* zst = ZIP_SOURCE_GET_ARGS(zip_stat_t, data, len, nullptr);
+      zip_stat_t* zst = LOCAL_ZIP_SOURCE_GET_ARGS(zip_stat_t, data, len, nullptr);
       if (!zst || !FileSystem::StatFile(fp, &st))
         return -1;
 
@@ -102,7 +105,7 @@ static zip_int64_t CFileSourceCallback(void* userdata, void* data, zip_uint64_t 
 
     case ZIP_SOURCE_SEEK:
     {
-      const zip_source_args_seek_t* args = ZIP_SOURCE_GET_ARGS(zip_source_args_seek_t, data, len, nullptr);
+      const zip_source_args_seek_t* args = LOCAL_ZIP_SOURCE_GET_ARGS(zip_source_args_seek_t, data, len, nullptr);
       if (!args)
         return -1;
 
@@ -128,6 +131,8 @@ static zip_int64_t CFileSourceCallback(void* userdata, void* data, zip_uint64_t 
     default:
       return -1;
   }
+
+#undef LOCAL_ZIP_SOURCE_GET_ARGS
 }
 } // namespace ZipHelpers
 
@@ -135,7 +140,7 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipCFile(std::FILE* fp, int flags
 {
   zip_error_t ze;
   zip_t* zip;
-  zip_source_t* zs = zip_source_function_create(&CFileSourceCallback, fp, &ze);
+  zip_source_t* zs = g_dyn_libzip.zip_source_function_create(&CFileSourceCallback, fp, &ze);
   if (!zs)
   {
     SetErrorObject(error, "zip_source_filep_create() failed: ", &ze);
@@ -144,11 +149,11 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipCFile(std::FILE* fp, int flags
   }
   else
   {
-    if (!(zip = zip_open_from_source(zs, flags, &ze)))
+    if (!(zip = g_dyn_libzip.zip_open_from_source(zs, flags, &ze)))
     {
       // have to clean up source
       SetErrorObject(error, "zip_open_from_source() failed: {}", &ze);
-      zip_source_free(zs);
+      g_dyn_libzip.zip_source_free(zs);
     }
   }
   return ManagedZipT(zip);
@@ -158,7 +163,7 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipBuffer(const void* buffer, siz
                                                          Error* error /*= nullptr*/)
 {
   zip_error_t ze;
-  zip_source_t* zs = zip_source_buffer_create(buffer, size, free_buffer, &ze);
+  zip_source_t* zs = g_dyn_libzip.zip_source_buffer_create(buffer, size, free_buffer, &ze);
   zip_t* zip;
   if (!zs)
   {
@@ -169,11 +174,11 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipBuffer(const void* buffer, siz
   }
   else
   {
-    if (!(zip = zip_open_from_source(zs, flags, &ze)))
+    if (!(zip = g_dyn_libzip.zip_open_from_source(zs, flags, &ze)))
     {
       // have to clean up source
       SetErrorObject(error, "zip_open_from_source() failed: {}", &ze);
-      zip_source_free(zs);
+      g_dyn_libzip.zip_source_free(zs);
     }
   }
 
@@ -183,7 +188,7 @@ ZipHelpers::ManagedZipT ZipHelpers::OpenManagedZipBuffer(const void* buffer, siz
 std::vector<std::string> ZipHelpers::ReadFileListInZip(zip_t* zip)
 {
   std::vector<std::string> ret;
-  zip_int64_t num_entries = zip_get_num_entries(zip, 0);
+  zip_int64_t num_entries = g_dyn_libzip.zip_get_num_entries(zip, 0);
   if constexpr (sizeof(size_t) < sizeof(zip_int64_t))
     num_entries = std::min(num_entries, static_cast<zip_int64_t>(std::numeric_limits<size_t>::max()));
   if (num_entries <= 0)
@@ -192,7 +197,7 @@ std::vector<std::string> ZipHelpers::ReadFileListInZip(zip_t* zip)
   ret.reserve(static_cast<size_t>(num_entries));
   for (zip_uint64_t i = 0; i < static_cast<zip_uint64_t>(num_entries); i++)
   {
-    const char* name = zip_get_name(zip, i, ZIP_FL_ENC_GUESS);
+    const char* name = g_dyn_libzip.zip_get_name(zip, i, ZIP_FL_ENC_GUESS);
     if (name)
       ret.emplace_back(name);
   }
@@ -203,18 +208,18 @@ std::vector<std::string> ZipHelpers::ReadFileListInZip(zip_t* zip)
 ZipHelpers::ManagedZipFileT ZipHelpers::OpenManagedFileInZip(zip_t* zip, const char* filename, u32 flags,
                                                              Error* error /*= nullptr*/)
 {
-  zip_file_t* zf = zip_fopen(zip, filename, flags);
+  zip_file_t* zf = g_dyn_libzip.zip_fopen(zip, filename, flags);
   if (!zf)
-    SetErrorObject(error, "zip_fopen() failed: ", zip_get_error(zip), false);
+    SetErrorObject(error, "zip_fopen() failed: ", g_dyn_libzip.zip_get_error(zip), false);
   return ManagedZipFileT(zf);
 }
 
 ZipHelpers::ManagedZipFileT ZipHelpers::OpenManagedFileIndexInZip(zip_t* zip, u64 index, u32 flags,
                                                                   Error* error /*= nullptr*/)
 {
-  zip_file_t* zf = zip_fopen_index(zip, index, flags);
+  zip_file_t* zf = g_dyn_libzip.zip_fopen_index(zip, index, flags);
   if (!zf)
-    SetErrorObject(error, "zip_fopen_index() failed: ", zip_get_error(zip), false);
+    SetErrorObject(error, "zip_fopen_index() failed: ", g_dyn_libzip.zip_get_error(zip), false);
   return ManagedZipFileT(zf);
 }
 
@@ -222,9 +227,9 @@ std::optional<u64> ZipHelpers::GetFileSizeInZip(zip_t* zip, const char* name, bo
                                                 Error* error /*= nullptr*/)
 {
   zip_stat_t st;
-  if (zip_stat(zip, name, 0, &st) != 0)
+  if (g_dyn_libzip.zip_stat(zip, name, 0, &st) != 0)
   {
-    SetErrorObject(error, "zip_stat() failed: ", zip_get_error(zip));
+    SetErrorObject(error, "zip_stat() failed: ", g_dyn_libzip.zip_get_error(zip));
     return std::nullopt;
   }
 
@@ -269,17 +274,17 @@ bool ZipHelpers::ExtractFileToDisk(zip_t* zip, const char* name, std::FILE* fp, 
 {
   const int flags = case_sensitive ? 0 : ZIP_FL_NOCASE;
 
-  const zip_int64_t file_index = zip_name_locate(zip, name, flags);
+  const zip_int64_t file_index = g_dyn_libzip.zip_name_locate(zip, name, flags);
   if (file_index < 0)
   {
-    SetErrorObject(error, "zip_name_locate() failed: ", zip_get_error(zip), false);
+    SetErrorObject(error, "zip_name_locate() failed: ", g_dyn_libzip.zip_get_error(zip), false);
     return false;
   }
 
-  zip_file_t* zf = zip_fopen_index(zip, file_index, flags);
+  zip_file_t* zf = g_dyn_libzip.zip_fopen_index(zip, file_index, flags);
   if (!zf)
   {
-    SetErrorObject(error, "zip_fopen_index() failed: ", zip_get_error(zip), false);
+    SetErrorObject(error, "zip_fopen_index() failed: ", g_dyn_libzip.zip_get_error(zip), false);
     return false;
   }
 
@@ -289,7 +294,7 @@ bool ZipHelpers::ExtractFileToDisk(zip_t* zip, const char* name, std::FILE* fp, 
   {
     zip_stat_t zst;
     update_progress =
-      (zip_stat_index(zip, file_index, flags, &zst) == 0 && (zst.valid & ZIP_STAT_SIZE) && zst.size > 0);
+      (g_dyn_libzip.zip_stat_index(zip, file_index, flags, &zst) == 0 && (zst.valid & ZIP_STAT_SIZE) && zst.size > 0);
     if (update_progress)
     {
       progress->PushState();
@@ -299,12 +304,12 @@ bool ZipHelpers::ExtractFileToDisk(zip_t* zip, const char* name, std::FILE* fp, 
 
   for (;;)
   {
-    const s64 read = zip_fread(zf, chunk_buffer.data(), chunk_size);
+    const s64 read = g_dyn_libzip.zip_fread(zf, chunk_buffer.data(), chunk_size);
     if (read < 0)
     {
       // read error
-      SetErrorObject(error, "zip_fread() failed: ", zip_get_error(zip), false);
-      zip_fclose(zf);
+      SetErrorObject(error, "zip_fread() failed: ", g_dyn_libzip.zip_get_error(zip), false);
+      g_dyn_libzip.zip_fclose(zf);
 
       if (update_progress)
         progress->PopState();
@@ -316,7 +321,7 @@ bool ZipHelpers::ExtractFileToDisk(zip_t* zip, const char* name, std::FILE* fp, 
     {
       // write error
       Error::SetErrno(error, "fwrite() failed: ", errno);
-      zip_fclose(zf);
+      g_dyn_libzip.zip_fclose(zf);
 
       if (update_progress)
         progress->PopState();
@@ -335,7 +340,7 @@ bool ZipHelpers::ExtractFileToDisk(zip_t* zip, const char* name, std::FILE* fp, 
   if (update_progress)
     progress->PopState();
 
-  zip_fclose(zf);
+  g_dyn_libzip.zip_fclose(zf);
 
   if (std::fflush(fp) != 0)
   {
@@ -355,34 +360,34 @@ static std::optional<T> ReadFileInZipToContainer(zip_t* zip, const char* name, b
   const int flags = case_sensitive ? 0 : ZIP_FL_NOCASE;
 
   std::optional<T> ret;
-  const zip_int64_t file_index = zip_name_locate(zip, name, flags);
+  const zip_int64_t file_index = g_dyn_libzip.zip_name_locate(zip, name, flags);
   if (file_index >= 0)
   {
     zip_stat_t zst;
-    if (zip_stat_index(zip, file_index, flags, &zst) == 0)
+    if (g_dyn_libzip.zip_stat_index(zip, file_index, flags, &zst) == 0)
     {
-      zip_file_t* zf = zip_fopen_index(zip, file_index, flags);
+      zip_file_t* zf = g_dyn_libzip.zip_fopen_index(zip, file_index, flags);
       if (zf)
       {
         ret = T();
         ret->resize(static_cast<size_t>(zst.size));
-        if (zip_fread(zf, ret->data(), ret->size()) != static_cast<zip_int64_t>(ret->size()))
+        if (g_dyn_libzip.zip_fread(zf, ret->data(), ret->size()) != static_cast<zip_int64_t>(ret->size()))
         {
-          SetErrorObject(error, "zip_fread() failed: ", zip_get_error(zip), false);
+          SetErrorObject(error, "zip_fread() failed: ", g_dyn_libzip.zip_get_error(zip), false);
           ret.reset();
         }
 
-        zip_fclose(zf);
+        g_dyn_libzip.zip_fclose(zf);
       }
     }
     else
     {
-      SetErrorObject(error, "zip_stat_index() failed: ", zip_get_error(zip), false);
+      SetErrorObject(error, "zip_stat_index() failed: ", g_dyn_libzip.zip_get_error(zip), false);
     }
   }
   else
   {
-    SetErrorObject(error, "zip_name_locate() failed: ", zip_get_error(zip), false);
+    SetErrorObject(error, "zip_name_locate() failed: ", g_dyn_libzip.zip_get_error(zip), false);
   }
 
   return ret;
@@ -396,7 +401,7 @@ static std::optional<T> ReadFileInZipToContainer(zip_file_t* file, u32 chunk_siz
   {
     const size_t pos = ret->size();
     ret->resize(pos + chunk_size);
-    const s64 read = zip_fread(file, ret->data() + pos, chunk_size);
+    const s64 read = g_dyn_libzip.zip_fread(file, ret->data() + pos, chunk_size);
     if (read < 0)
     {
       // read error

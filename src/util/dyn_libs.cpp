@@ -5,6 +5,7 @@
 #include "dyn_libjpeg.h"
 #include "dyn_libpng.h"
 #include "dyn_libwebp.h"
+#include "dyn_libzip.h"
 #include "dyn_plutosvg.h"
 #include "dyn_sdl.h"
 #include "dyn_shaderc.h"
@@ -26,6 +27,7 @@ static_assert(std::is_trivially_copyable_v<DynPlutoSvg> && std::is_standard_layo
 static_assert(std::is_trivially_copyable_v<DynLibPNG> && std::is_standard_layout_v<DynLibPNG>);
 static_assert(std::is_trivially_copyable_v<DynLibJPEG> && std::is_standard_layout_v<DynLibJPEG>);
 static_assert(std::is_trivially_copyable_v<DynLibWebP> && std::is_standard_layout_v<DynLibWebP>);
+static_assert(std::is_trivially_copyable_v<DynLibZip> && std::is_standard_layout_v<DynLibZip>);
 static_assert(std::is_trivially_copyable_v<DynSDL> && std::is_standard_layout_v<DynSDL>);
 static_assert(std::is_trivially_copyable_v<DynShaderc> && std::is_standard_layout_v<DynShaderc>);
 static_assert(std::is_trivially_copyable_v<DynSpirvCross> && std::is_standard_layout_v<DynSpirvCross>);
@@ -39,6 +41,7 @@ static constexpr int LIBPNG_MAJOR_VERSION = -1;
 static constexpr int LIBJPEG_MAJOR_VERSION = -1;
 static constexpr int LIBWEBP_MAJOR_VERSION = -1;
 static constexpr int LIBSDL_MAJOR_VERSION = -1;
+static constexpr int LIBZIP_MAJOR_VERSION = -1;
 static constexpr int SQLITE_MAJOR_VERSION = -1;
 static constexpr int SPIRV_CROSS_MAJOR_VERSION = -1;
 #else
@@ -47,6 +50,7 @@ static constexpr int PLUTOSVG_MAJOR_VERSION = 0;
 static constexpr int LIBPNG_MAJOR_VERSION = 16;
 static constexpr int LIBJPEG_MAJOR_VERSION = 62;
 static constexpr int LIBWEBP_MAJOR_VERSION = 7;
+static constexpr int LIBZIP_MAJOR_VERSION = 5;
 static constexpr int LIBSDL_MAJOR_VERSION = 0;
 static constexpr int SQLITE_MAJOR_VERSION = 3;
 static constexpr int SPIRV_CROSS_MAJOR_VERSION = SPVC_C_API_VERSION_MAJOR;
@@ -65,6 +69,8 @@ struct Locals
   std::once_flag libpng_init_flag;
   DynamicLibrary libwebp_library;
   std::once_flag libwebp_init_flag;
+  DynamicLibrary libzip_library;
+  std::once_flag libzip_init_flag;
   DynamicLibrary sdl_library;
   std::once_flag sdl_init_flag;
   DynamicLibrary sqlite_library;
@@ -86,6 +92,7 @@ DynPlutoSvg g_dyn_plutosvg;
 DynLibJPEG g_dyn_libjpeg;
 DynLibWebP g_dyn_libwebp;
 DynLibPNG g_dyn_libpng;
+DynLibZip g_dyn_libzip;
 DynSDL g_dyn_sdl;
 DynSqlite g_dyn_sqlite;
 DynShaderc g_dyn_shaderc;
@@ -201,6 +208,21 @@ bool DynLibWebP::Open(Error* const error)
 
   return LoadDynLib("webp", LIBWEBP_MAJOR_VERSION, s_locals.libwebp_library, s_locals.libwebp_init_flag,
                     s_libwebp_symbols, error);
+}
+
+static const DynamicLibrary::SymbolTable s_libzip_symbols[] = {
+#define RESOLVE_SYMBOL(F) {#F, (void**)&g_dyn_libzip.F},
+  DYN_LIBZIP_FUNCTIONS(RESOLVE_SYMBOL)
+#undef RESOLVE_SYMBOL
+};
+
+bool DynLibZip::Open(Error* const error)
+{
+  if (s_locals.libzip_library.IsOpen()) [[likely]]
+    return true;
+
+  return LoadDynLib("zip", LIBZIP_MAJOR_VERSION, s_locals.libzip_library, s_locals.libzip_init_flag, s_libzip_symbols,
+                    error);
 }
 
 static const DynamicLibrary::SymbolTable s_sdl_symbols[] = {

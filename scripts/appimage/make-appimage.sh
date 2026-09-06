@@ -43,6 +43,7 @@ declare -a MANUAL_LIBS=(
 	"libwebpmux.so.3"
 	"libwebp.so.7"
 	"libz.so.1"
+	"libzip.so.5"
 
 	"libdiscord-rpc.so"
 	"libplutosvg.so.0"

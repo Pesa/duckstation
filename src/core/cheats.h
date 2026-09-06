@@ -183,6 +183,9 @@ u32 GetActiveCheatCount();
 /// Returns true if the widescreen patch is active.
 bool IsWidescreenPatchActive();
 
+/// Unloads the cheat database from memory.
+void UnloadDatabase();
+
 // Config sections/keys to use to enable patches.
 extern const char* PATCHES_CONFIG_SECTION;
 extern const char* CHEATS_CONFIG_SECTION;

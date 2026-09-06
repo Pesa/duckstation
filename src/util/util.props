@@ -25,7 +25,7 @@
       <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(DepsIncludeDir)spirv_cross</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>%(AdditionalDependencies);soundtouch.lib;zip.lib;zlib.lib;zstd.lib</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);soundtouch.lib;zlib.lib;zstd.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

@@ -28,11 +28,14 @@ add_library(util
   core_audio_stream.h
   cue_parser.cpp
   cue_parser.h
-  dyn_shaderc.h
-  dyn_spirv_cross.h
+  dyn_libjpeg.h
   dyn_libpng.h
   dyn_libs.cpp
+  dyn_libwebp.h
+  dyn_libzip.h
   dyn_sdl.h
+  dyn_shaderc.h
+  dyn_spirv_cross.h
   dyn_sqlite.h
   elf_file.cpp
   elf_file.h
@@ -106,11 +109,10 @@ target_include_directories(util PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
 get_target_property(JPEG_INCLUDE_DIRS libjpeg-turbo::jpeg INTERFACE_INCLUDE_DIRECTORIES)
 get_target_property(PNG_INCLUDE_DIRS PNG::png_shared INTERFACE_INCLUDE_DIRECTORIES)
 get_target_property(WEBP_INCLUDE_DIRS WebP::webp INTERFACE_INCLUDE_DIRECTORIES)
-target_include_directories(util PRIVATE ${JPEG_INCLUDE_DIRS} ${PNG_INCLUDE_DIRS} ${WEBP_INCLUDE_DIRS})
+get_target_property(LIBZIP_INCLUDE_DIRS libzip::zip INTERFACE_INCLUDE_DIRECTORIES)
+target_include_directories(util PRIVATE ${JPEG_INCLUDE_DIRS} ${PNG_INCLUDE_DIRS} ${WEBP_INCLUDE_DIRS} ${LIBZIP_INCLUDE_DIRS})
 target_link_libraries(util PUBLIC common imgui)
-target_link_libraries(util PRIVATE libchdr lzma
-                                   plutosvg::plutosvg ZLIB::ZLIB SoundTouch::SoundTouchDLL xxhash
-                                   libzip::zip zstd::libzstd_shared reshadefx)
+target_link_libraries(util PRIVATE libchdr lzma ZLIB::ZLIB SoundTouch::SoundTouchDLL xxhash zstd::libzstd_shared reshadefx)
 
 if(ENABLE_X11)
   target_sources(util PRIVATE
@@ -291,6 +293,6 @@ function(add_util_resources target)
 
   # Copy dynamically-loaded libraries into the bundle.
   add_runtime_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared SDL3::SDL3
-                        freetype harfbuzz::harfbuzz plutosvg::plutosvg libjpeg-turbo::jpeg PNG::png_shared WebP::webp
-                        WebP::sharpyuv WebP::webpdecoder WebP::webpdemux WebP::libwebpmux)
+                        freetype harfbuzz::harfbuzz plutosvg::plutosvg libjpeg-turbo::jpeg PNG::png_shared libzip::zip
+                        WebP::webp WebP::sharpyuv WebP::webpdecoder WebP::webpdemux WebP::libwebpmux)
 endfunction()

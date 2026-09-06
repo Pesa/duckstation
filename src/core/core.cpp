@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 
 #include "core.h"
+#include "cheats.h"
 #include "achievements.h"
 #include "achievements_private.h"
 #include "core_private.h"
@@ -757,6 +758,8 @@ void Core::CoreThreadShutdown()
 #endif
 
   Achievements::Shutdown();
+
+  Cheats::UnloadDatabase();
 
   GPUDevice::UnloadDynamicLibraries();
 
