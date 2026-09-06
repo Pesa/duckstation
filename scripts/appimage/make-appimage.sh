@@ -48,6 +48,7 @@ declare -a MANUAL_LIBS=(
 	"libshaderc_shared.so"
 	"libspirv-cross-c-shared.so.0"
 	"libsqlite3.so.3"
+	"libSDL3.so.0"
 
 	"libavcodec.so.63"
 	"libavformat.so.63"

@@ -31,6 +31,7 @@ add_library(util
   dyn_shaderc.h
   dyn_spirv_cross.h
   dyn_libpng.h
+  dyn_sdl.h
   dyn_sqlite.h
   elf_file.cpp
   elf_file.h
@@ -218,8 +219,9 @@ if(NOT ANDROID)
   )
   target_link_libraries(util PUBLIC
     cubeb
-    SDL3::SDL3
+    SDL3::Headers
   )
+
   # FFmpeg loaded dynamically on demand.
   target_include_directories(util PUBLIC ${FFMPEG_INCLUDE_DIRS})
 endif()
@@ -280,7 +282,7 @@ function(add_util_resources target)
   endif()
 
   # Copy dynamically-loaded libraries into the bundle.
-  add_runtime_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared
+  add_runtime_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared SDL3::SDL3
                         libjpeg-turbo::jpeg PNG::png_shared WebP::webp WebP::sharpyuv WebP::webpdecoder
                         WebP::webpdemux WebP::libwebpmux)
   if(APPLE)

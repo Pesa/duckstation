@@ -1,13 +1,12 @@
-// SPDX-FileCopyrightText: 2019-2025 Connor McLaughlin <stenzek@gmail.com>
+// SPDX-FileCopyrightText: 2019-2026 Connor McLaughlin <stenzek@gmail.com>
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 
 #include "audio_stream.h"
+#include "dyn_sdl.h"
 
 #include "common/assert.h"
 #include "common/error.h"
 #include "common/log.h"
-
-#include <SDL3/SDL.h>
 
 LOG_CHANNEL(AudioStream);
 
@@ -40,14 +39,17 @@ static bool InitializeSDLAudio(Error* error)
   if (initialized)
     return true;
 
+  if (!g_dyn_sdl.Open(error))
+    return false;
+
   // May as well keep it alive until the process exits.
-  if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
+  if (!g_dyn_sdl.SDL_InitSubSystem(SDL_INIT_AUDIO))
   {
-    Error::SetStringFmt(error, "SDL_InitSubSystem(SDL_INIT_AUDIO) failed: {}", SDL_GetError());
+    Error::SetStringFmt(error, "SDL_InitSubSystem(SDL_INIT_AUDIO) failed: {}", g_dyn_sdl.SDL_GetError());
     return false;
   }
 
-  std::atexit([]() { SDL_QuitSubSystem(SDL_INIT_AUDIO); });
+  std::atexit([]() { g_dyn_sdl.SDL_QuitSubSystem(SDL_INIT_AUDIO); });
 
   initialized = true;
   return true;
@@ -61,7 +63,7 @@ SDLAudioStream::~SDLAudioStream()
 {
   if (m_sdl_stream)
   {
-    SDL_DestroyAudioStream(m_sdl_stream);
+    g_dyn_sdl.SDL_DestroyAudioStream(m_sdl_stream);
     m_sdl_stream = nullptr;
   }
 }
@@ -72,24 +74,24 @@ bool SDLAudioStream::Initialize(u32 sample_rate, u32 channels, u32 output_latenc
   const SDL_AudioSpec spec = {
     .format = SDL_AUDIO_S16LE, .channels = static_cast<int>(channels), .freq = static_cast<int>(sample_rate)};
 
-  m_sdl_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, AudioCallback, this);
+  m_sdl_stream = g_dyn_sdl.SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, AudioCallback, this);
   if (!m_sdl_stream)
   {
-    Error::SetStringFmt(error, "SDL_OpenAudioDeviceStream() failed: {}", SDL_GetError());
+    Error::SetStringFmt(error, "SDL_OpenAudioDeviceStream() failed: {}", g_dyn_sdl.SDL_GetError());
     return false;
   }
 
   if (auto_start)
-    SDL_ResumeAudioStreamDevice(m_sdl_stream);
+    g_dyn_sdl.SDL_ResumeAudioStreamDevice(m_sdl_stream);
 
   return true;
 }
 
 bool SDLAudioStream::Start(Error* error)
 {
-  if (!SDL_ResumeAudioStreamDevice(m_sdl_stream))
+  if (!g_dyn_sdl.SDL_ResumeAudioStreamDevice(m_sdl_stream))
   {
-    Error::SetStringFmt(error, "SDL_ResumeAudioStreamDevice() failed: {}", SDL_GetError());
+    Error::SetStringFmt(error, "SDL_ResumeAudioStreamDevice() failed: {}", g_dyn_sdl.SDL_GetError());
     return false;
   }
 
@@ -98,9 +100,9 @@ bool SDLAudioStream::Start(Error* error)
 
 bool SDLAudioStream::Stop(Error* error)
 {
-  if (!SDL_PauseAudioStreamDevice(m_sdl_stream))
+  if (!g_dyn_sdl.SDL_PauseAudioStreamDevice(m_sdl_stream))
   {
-    Error::SetStringFmt(error, "SDL_PauseAudioStreamDevice() failed: {}", SDL_GetError());
+    Error::SetStringFmt(error, "SDL_PauseAudioStreamDevice() failed: {}", g_dyn_sdl.SDL_GetError());
     return false;
   }
 
@@ -118,7 +120,7 @@ void SDLAudioStream::AudioCallback(void* userdata, SDL_AudioStream* stream, int 
     SDLAudioStream* const this_ptr = static_cast<SDLAudioStream*>(userdata);
     const u32 num_frames = static_cast<u32>(additional_amount) / (sizeof(SampleType) * this_ptr->m_channels);
     this_ptr->m_source->ReadFrames(reinterpret_cast<SampleType*>(data), num_frames);
-    SDL_PutAudioStreamData(stream, data, additional_amount);
+    g_dyn_sdl.SDL_PutAudioStreamData(stream, data, additional_amount);
     SDL_stack_free(data);
   }
 }

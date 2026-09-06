@@ -86,6 +86,7 @@
     <ClInclude Include="dyn_libpng.h" />
     <ClInclude Include="sqlite_helpers.h" />
     <ClInclude Include="zip_helpers.h" />
+    <ClInclude Include="dyn_sdl.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="state_wrapper.cpp" />
