@@ -60,8 +60,6 @@ public:
 
   static bool IsHandledInputEvent(const SDL_Event* ev);
 
-  static bool ALLOW_EVENT_POLLING;
-
 private:
   struct ControllerData
   {

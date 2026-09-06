@@ -306,8 +306,6 @@ static void SDLLogCallback(void* userdata, int category, SDL_LogPriority priorit
   GENERIC_LOG(Log::Channel::SDL, priority_map[priority], Log::Color::Default, message);
 }
 
-bool SDLInputSource::ALLOW_EVENT_POLLING = true;
-
 SDLInputSource::SDLInputSource() = default;
 
 SDLInputSource::~SDLInputSource()
@@ -629,9 +627,6 @@ void SDLInputSource::ShutdownSubsystem()
 
 void SDLInputSource::PollEvents()
 {
-  if (!ALLOW_EVENT_POLLING)
-    return;
-
   for (;;)
   {
     SDL_Event ev;
