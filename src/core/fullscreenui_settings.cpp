@@ -5309,7 +5309,8 @@ void FullscreenUI::DrawPostProcessingSettingsPage()
   MenuHeading(FSUI_VSTR("Border Overlay"));
 
   {
-    const std::optional<TinyString> preset_name = bsi->GetOptionalTinyStringValue("BorderOverlay", "PresetName");
+    const std::optional<TinyString> preset_name = bsi->GetOptionalTinyStringValue(
+      "BorderOverlay", "PresetName", IsEditingGameSettings(bsi) ? std::nullopt : std::make_optional(""));
     const bool is_null = !preset_name.has_value();
     const bool is_none = (!is_null && preset_name->empty());
     const bool is_custom = (!is_null && preset_name.value() == "Custom");
