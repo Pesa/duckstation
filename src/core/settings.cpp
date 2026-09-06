@@ -579,7 +579,7 @@ void Settings::Load(const SettingsInterface& si, const SettingsInterface& contro
 
   pcdrv_enable = si.GetBoolValue("PCDrv", "Enabled", false);
   pcdrv_enable_writes = si.GetBoolValue("PCDrv", "EnableWrites", false);
-  pcdrv_root = si.GetStringViewValue("PCDrv", "Root");
+  pcdrv_root = Path::ToNativePath(si.GetStringViewValue("PCDrv", "Root"));
 
   texture_replacements.enable_texture_replacements =
     si.GetBoolValue("TextureReplacements", "EnableTextureReplacements", false);
