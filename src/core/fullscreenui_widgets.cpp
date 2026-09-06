@@ -3995,7 +3995,7 @@ bool FullscreenUI::MenuActionButton(std::string_view title, std::string_view sum
                                     bool dropdown_icon /* = false */, bool enabled /* = true */)
 {
   const SmallString display_value =
-    SmallString::from_format("{}  {}", value, dropdown_icon ? ICON_FA_CHEVRON_DOWN : ICON_FA_CHEVRON_RIGHT);
+    SmallString::from_format("{}  {}", value, dropdown_icon ? ICON_PF_EXPAND_UP_DOWN_LINE : ICON_FA_CHEVRON_RIGHT);
   const float box_padding_x = LayoutScale(15.0f);
   const MenuButtonBounds bb(title, display_value, box_padding_x, summary);
 

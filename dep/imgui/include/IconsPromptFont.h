@@ -374,6 +374,10 @@
 #define ICON_PF_KEY_NUMPAD_EQUAL "\xF0\x9F\xB3\xB8"
 #define ICON_PF_MENU "\xF0\x9F\xB3\xBB"
 #define ICON_PF_KEY_MINUS "\xF0\x9F\xB3\xBC"
+#define ICON_PF_EXPAND_UP_DOWN_FILL "\xF0\x9F\xB1\xA6"
+#define ICON_PF_EXPAND_LEFT_RIGHT_FILL "\xF0\x9F\xB1\xA7"
+#define ICON_PF_EXPAND_UP_DOWN_LINE "\xF0\x9F\xB1\xA8"
+#define ICON_PF_EXPAND_LEFT_RIGHT_LINE "\xF0\x9F\xB1\xA9"
 
 // Platform specific keys.
 #if defined(_WIN32)
