@@ -83,7 +83,16 @@ std::optional<std::string> CocoaTools::GetBundlePath()
   std::optional<std::string> ret;
   @autoreleasepool
   {
-    NSURL* url = [NSURL fileURLWithPath:[[NSBundle mainBundle] bundlePath]];
+    NSBundle* bundle = [NSBundle mainBundle];
+    if (!bundle)
+      return std::nullopt;
+
+    // A real macOS application bundle should have CFBundlePackageType = APPL.
+    NSString* packageType = [bundle objectForInfoDictionaryKey:@"CFBundlePackageType"];
+    if (![packageType isEqualToString:@"APPL"])
+      return std::nullopt;
+
+    NSURL* url = [bundle bundleURL];
     if (url)
       ret = std::string([url fileSystemRepresentation]);
   }
