@@ -3654,6 +3654,9 @@ int main(int argc, char* argv[])
 #ifdef __linux__
   // Overriding LD_LIBRARY_PATH breaks a bunch of shit, since it'll use out-of-date system libraries.
   WarnAboutLDLibraryPath();
+
+  // Create desktop file if it does not exist.
+  CheckDesktopFile();
 #endif
 
   // Build warning.
@@ -3687,9 +3690,6 @@ int main(int argc, char* argv[])
   }
 
 #ifdef __linux__
-  // Create desktop file if it does not exist.
-  CheckDesktopFile();
-
   // I hate this so much. Turns out not only is window raising non-functional on GNOME for what I'm guessing
   // is purely political reasons, it's also very unreliable on KDE too. Sometimes raising works, other times
   // it doesn't. Deferring the request doesn't seem to help either. Can't be arsed to debug, just force all
