@@ -122,6 +122,7 @@
   <ItemGroup>
     <ClCompile Include="animated_image.cpp" />
     <ClCompile Include="audio_stream.cpp" />
+    <ClCompile Include="dyn_libs.cpp" />
     <ClCompile Include="http_cache.cpp" />
     <ClCompile Include="object_archive.cpp" />
     <ClCompile Include="cd_image.cpp" />
@@ -278,7 +279,7 @@
   <Import Project="util.props" />
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)dep\reshadefx\include;$(SolutionDir)dep\lzma\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)dep\reshadefx\include;$(SolutionDir)dep\lzma\include;$(DepsIncludeDir)freetype2</AdditionalIncludeDirectories>
       <ObjectFileName>$(IntDir)/%(RelativeDir)/</ObjectFileName>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>

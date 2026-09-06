@@ -1,4 +1,6 @@
 set(SRCS
+  include/dyn_freetype.h
+  include/dyn_plutosvg.h
   include/imconfig.h
   include/imgui.h
   include/imgui_freetype.h
@@ -17,6 +19,12 @@ set(SRCS
 )
 
 add_library(imgui ${SRCS})
-target_include_directories(imgui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${CMAKE_CURRENT_SOURCE_DIR}/src")
+get_target_property(FREETYPE_INCLUDE_DIRS freetype INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(PLUTOSVG_INCLUDE_DIRS plutosvg::plutosvg INTERFACE_INCLUDE_DIRECTORIES)
+target_include_directories(imgui PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${FREETYPE_INCLUDE_DIRS}"
+  "${PLUTOSVG_INCLUDE_DIRS}"
+)
 target_include_directories(imgui INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(imgui PUBLIC Freetype::Freetype plutosvg::plutosvg)

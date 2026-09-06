@@ -18,8 +18,8 @@
 #include <QtWidgets/QStyleOption>
 
 #include <cmath>
+#include <dyn_plutosvg.h>
 #include <limits>
-#include <plutosvg.h>
 
 #include "moc_svgiconengine.cpp"
 
@@ -55,7 +55,7 @@ static QString BuildCacheKey(const QString& resource_path, const QSize& size, qr
 /// Callback used when freeing the QImage.
 static void CleanupPlutoSVGSurface(void* surface)
 {
-  plutovg_surface_destroy(static_cast<plutovg_surface_t*>(surface));
+  g_dyn_plutosvg.plutovg_surface_destroy(static_cast<plutovg_surface_t*>(surface));
 }
 
 /// Renders the document at the given pixel dimensions with the given colour and inserts the
@@ -75,13 +75,13 @@ static bool RenderSVGToPixmap(QPixmap& pm, const plutosvg_document* doc, const Q
 
   // Determine SVG intrinsic size and compute a uniform scale that fits inside physical,
   // preserving aspect ratio.
-  const float svg_w = plutosvg_document_get_width(doc);
-  const float svg_h = plutosvg_document_get_height(doc);
+  const float svg_w = g_dyn_plutosvg.plutosvg_document_get_width(doc);
+  const float svg_h = g_dyn_plutosvg.plutosvg_document_get_height(doc);
   QSize render_size = size;
   if (svg_w > 0.0f && svg_h > 0.0f)
     render_size = QSizeF(svg_w, svg_h).scaled(size, Qt::KeepAspectRatio).toSize();
 
-  plutovg_surface_t* surface = plutosvg_document_render_to_surface(
+  plutovg_surface_t* surface = g_dyn_plutosvg.plutosvg_document_render_to_surface(
     doc, nullptr, render_size.width(), render_size.height(), &current_color, nullptr, nullptr);
   if (!surface)
     return false;
@@ -89,9 +89,10 @@ static bool RenderSVGToPixmap(QPixmap& pm, const plutosvg_document* doc, const Q
   // plutovg surfaces are premultiplied ARGB (0xAARRGGBB, native-endian), which matches
   // QImage::Format_ARGB32_Premultiplied exactly, no pixel conversion required.
   // The cleanup function ensures the surface is destroyed when the QImage is done with the pixel data.
-  const QImage img(plutovg_surface_get_data(surface), plutovg_surface_get_width(surface),
-                   plutovg_surface_get_height(surface), plutovg_surface_get_stride(surface),
-                   QImage::Format_ARGB32_Premultiplied, CleanupPlutoSVGSurface, surface);
+  const QImage img(g_dyn_plutosvg.plutovg_surface_get_data(surface), g_dyn_plutosvg.plutovg_surface_get_width(surface),
+                   g_dyn_plutosvg.plutovg_surface_get_height(surface),
+                   g_dyn_plutosvg.plutovg_surface_get_stride(surface), QImage::Format_ARGB32_Premultiplied,
+                   CleanupPlutoSVGSurface, surface);
 
   pm = QPixmap::fromImage(img);
   if (pm.isNull())
@@ -125,7 +126,7 @@ SVGIconEngine::SVGIconEngine(const QString& resource_path) : m_resource_path(res
 SVGIconEngine::~SVGIconEngine()
 {
   if (m_document)
-    plutosvg_document_destroy(m_document);
+    g_dyn_plutosvg.plutosvg_document_destroy(m_document);
 }
 
 bool SVGIconEngine::ensureLoaded() const
@@ -146,8 +147,9 @@ bool SVGIconEngine::ensureLoaded() const
   }
 
   // The document borrows the data pointer; m_svg_data must remain valid for the document's lifetime.
-  m_document = plutosvg_document_load_from_data(reinterpret_cast<const char*>(m_svg_data.data()),
-                                                static_cast<int>(m_svg_data.size()), -1.0f, -1.0f, nullptr, nullptr);
+  m_document = g_dyn_plutosvg.plutosvg_document_load_from_data(reinterpret_cast<const char*>(m_svg_data.data()),
+                                                               static_cast<int>(m_svg_data.size()), -1.0f, -1.0f,
+                                                               nullptr, nullptr);
   if (!m_document)
   {
     qCritical() << "Failed to parse SVG data: " << m_resource_path;
@@ -238,6 +240,9 @@ QString SVGIconEngine::iconName()
 
 QIconEngine* SVGIconEnginePlugin::create(const QString& resource_path)
 {
+  if (!g_dyn_plutosvg.Open()) [[unlikely]]
+    return nullptr;
+
   if (resource_path.endsWith(".svg", Qt::CaseInsensitive))
     return new SVGIconEngine(resource_path);
 
@@ -249,7 +254,7 @@ SVGImageHandler::SVGImageHandler() = default;
 SVGImageHandler::~SVGImageHandler()
 {
   if (m_document)
-    plutosvg_document_destroy(m_document);
+    g_dyn_plutosvg.plutosvg_document_destroy(m_document);
 }
 
 bool SVGImageHandler::canRead() const
@@ -265,8 +270,9 @@ bool SVGImageHandler::canRead() const
     return false;
   }
 
-  m_document = plutosvg_document_load_from_data(reinterpret_cast<const char*>(m_svg_data.data()),
-                                                static_cast<int>(m_svg_data.size()), -1.0f, -1.0f, nullptr, nullptr);
+  m_document = g_dyn_plutosvg.plutosvg_document_load_from_data(reinterpret_cast<const char*>(m_svg_data.data()),
+                                                               static_cast<int>(m_svg_data.size()), -1.0f, -1.0f,
+                                                               nullptr, nullptr);
   if (!m_document)
   {
     qCritical() << "Failed to parse SVG data";
@@ -286,15 +292,15 @@ bool SVGImageHandler::read(QImage* image)
   QSize render_size = m_scaled_size;
   if (!render_size.isValid())
   {
-    render_size = QSize(qMax(1, qRound(plutosvg_document_get_width(m_document))),
-                        qMax(1, qRound(plutosvg_document_get_height(m_document))));
+    render_size = QSize(qMax(1, qRound(g_dyn_plutosvg.plutosvg_document_get_width(m_document))),
+                        qMax(1, qRound(g_dyn_plutosvg.plutosvg_document_get_height(m_document))));
   }
 
   // Render with a solid currentColor so the SVG's own fill/stroke colours are preserved.
   // Callers that want palette tinting should use ThemeSVGIconEngine instead.
   const plutovg_color_t current_color = {.r = 1.0f, .g = 1.0f, .b = 1.0f, .a = 1.0f};
 
-  plutovg_surface_t* surface = plutosvg_document_render_to_surface(
+  plutovg_surface_t* surface = g_dyn_plutosvg.plutosvg_document_render_to_surface(
     m_document, nullptr, render_size.width(), render_size.height(), &current_color, nullptr, nullptr);
   if (!surface)
     return false;
@@ -302,8 +308,9 @@ bool SVGImageHandler::read(QImage* image)
   // Wrap the surface pixels in a QImage; the cleanup function destroys the surface once Qt is done.
   // plutovg uses premultiplied ARGB (0xAARRGGBB, native-endian) == QImage::Format_ARGB32_Premultiplied.
   *image =
-    QImage(plutovg_surface_get_data(surface), plutovg_surface_get_width(surface), plutovg_surface_get_height(surface),
-           plutovg_surface_get_stride(surface), QImage::Format_ARGB32_Premultiplied, CleanupPlutoSVGSurface, surface);
+    QImage(g_dyn_plutosvg.plutovg_surface_get_data(surface), g_dyn_plutosvg.plutovg_surface_get_width(surface),
+           g_dyn_plutosvg.plutovg_surface_get_height(surface), g_dyn_plutosvg.plutovg_surface_get_stride(surface),
+           QImage::Format_ARGB32_Premultiplied, CleanupPlutoSVGSurface, surface);
 
   return !image->isNull();
 }
@@ -323,8 +330,8 @@ QVariant SVGImageHandler::option(ImageOption option) const
     if (!canRead())
       return {};
 
-    return QSize(qMax(1, qRound(plutosvg_document_get_width(m_document))),
-                 qMax(1, qRound(plutosvg_document_get_height(m_document))));
+    return QSize(qMax(1, qRound(g_dyn_plutosvg.plutosvg_document_get_width(m_document))),
+                 qMax(1, qRound(g_dyn_plutosvg.plutosvg_document_get_height(m_document))));
   }
 
   return {};
@@ -354,6 +361,9 @@ QImageIOPlugin::Capabilities SVGImageHandlerPlugin::capabilities(QIODevice* devi
 
 QImageIOHandler* SVGImageHandlerPlugin::create(QIODevice* device, const QByteArray& format) const
 {
+  if (!g_dyn_plutosvg.Open()) [[unlikely]]
+    return nullptr;
+
   SVGImageHandler* const handler = new SVGImageHandler();
   handler->setDevice(device);
   handler->setFormat(format.isEmpty() ? QByteArray("svg") : format);

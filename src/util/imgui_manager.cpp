@@ -28,12 +28,14 @@
 #include "common/threading.h"
 #include "common/timer.h"
 
-#include "IconsEmoji.h"
-#include "IconsFontAwesome.h"
-#include "fmt/format.h"
-#include "imgui.h"
-#include "imgui_freetype.h"
-#include "imgui_internal.h"
+#include <IconsEmoji.h>
+#include <IconsFontAwesome.h>
+#include <dyn_freetype.h>
+#include <dyn_plutosvg.h>
+#include <fmt/format.h>
+#include <imgui.h>
+#include <imgui_freetype.h>
+#include <imgui_internal.h>
 
 #include <atomic>
 #include <cmath>
@@ -366,6 +368,10 @@ void ImGuiManager::UpdateFixedFont()
 
 bool ImGuiManager::Initialize(Error* error)
 {
+  // Requires both freetype and plutosvg.
+  if (!g_dyn_freetype.Open(error) || !g_dyn_plutosvg.Open(error)) [[unlikely]]
+    return false;
+
   s_state.text_font_index = GetTextFontIndex();
   s_state.fixed_font_index = GetFixedFontIndex();
 

@@ -2,6 +2,8 @@
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="..\vsprops\Configurations.props" />
   <ItemGroup>
+    <ClInclude Include="include\dyn_freetype.h" />
+    <ClInclude Include="include\dyn_plutosvg.h" />
     <ClInclude Include="include\imconfig.h" />
     <ClInclude Include="include\imgui.h" />
     <ClInclude Include="include\imgui_freetype.h" />

@@ -20,6 +20,7 @@
 #include "common/string_util.h"
 
 #include <cmath>
+#include <dyn_plutosvg.h>
 #include <jpeglib.h>
 #include <limits>
 #include <plutosvg.h>
@@ -611,10 +612,14 @@ bool Image::RasterizeSVG(const std::span<const u8> data, u32 width, u32 height,
     return false;
   }
 
+  if (!g_dyn_plutosvg.Open(error)) [[unlikely]]
+    return false;
+
   std::unique_ptr<plutosvg_document, void (*)(plutosvg_document*)> doc(
-    plutosvg_document_load_from_data(reinterpret_cast<const char*>(data.data()), static_cast<int>(data.size_bytes()),
-                                     static_cast<float>(width), static_cast<float>(height), nullptr, nullptr),
-    plutosvg_document_destroy);
+    g_dyn_plutosvg.plutosvg_document_load_from_data(reinterpret_cast<const char*>(data.data()),
+                                                    static_cast<int>(data.size_bytes()), static_cast<float>(width),
+                                                    static_cast<float>(height), nullptr, nullptr),
+    g_dyn_plutosvg.plutosvg_document_destroy);
   if (!doc)
   {
     Error::SetStringView(error, "plutosvg_document_load_from_data() failed");
@@ -629,8 +634,8 @@ bool Image::RasterizeSVG(const std::span<const u8> data, u32 width, u32 height,
 
   if (maintain_aspect_ratio)
   {
-    const float doc_width = plutosvg_document_get_width(doc.get());
-    const float doc_height = plutosvg_document_get_height(doc.get());
+    const float doc_width = g_dyn_plutosvg.plutosvg_document_get_width(doc.get());
+    const float doc_height = g_dyn_plutosvg.plutosvg_document_get_height(doc.get());
     if (doc_width > 0.0f && doc_height > 0.0f)
     {
       const float fwidth = static_cast<float>(width);
@@ -660,9 +665,9 @@ bool Image::RasterizeSVG(const std::span<const u8> data, u32 width, u32 height,
   }
 
   std::unique_ptr<plutovg_surface, void (*)(plutovg_surface*)> bitmap(
-    plutosvg_document_render_to_surface(doc.get(), nullptr, static_cast<int>(width), static_cast<int>(height),
-                                        &current_color, nullptr, nullptr),
-    plutovg_surface_destroy);
+    g_dyn_plutosvg.plutosvg_document_render_to_surface(doc.get(), nullptr, static_cast<int>(width),
+                                                       static_cast<int>(height), &current_color, nullptr, nullptr),
+    g_dyn_plutosvg.plutovg_surface_destroy);
   if (!bitmap)
   {
     Error::SetStringView(error, "plutosvg_document_render_to_surface() failed");
@@ -683,7 +688,8 @@ bool Image::RasterizeSVG(const std::span<const u8> data, u32 width, u32 height,
 
   // lunasvg works in BGRA, swap to RGBA
   SwapBGRAToRGBA(m_pixels.get() + (canvas_offset_y * m_pitch) + (canvas_offset_x * sizeof(u32)), m_pitch,
-                 plutovg_surface_get_data(bitmap.get()), plutovg_surface_get_stride(bitmap.get()), width, height);
+                 g_dyn_plutosvg.plutovg_surface_get_data(bitmap.get()),
+                 g_dyn_plutosvg.plutovg_surface_get_stride(bitmap.get()), width, height);
   return true;
 }
 

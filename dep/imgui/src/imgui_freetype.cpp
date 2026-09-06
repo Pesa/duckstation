@@ -41,6 +41,7 @@
 #ifndef IMGUI_DISABLE
 #include "imgui_freetype.h"
 #include "imgui_internal.h"     // ImMin,ImMax,ImFontAtlasBuild*,
+#include "dyn_freetype.h"
 #include <stdint.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H          // <freetype/freetype.h>
@@ -58,7 +59,7 @@
 #error Lunasvg is not supported
 #endif
 #ifdef  IMGUI_ENABLE_FREETYPE_PLUTOSVG
-#include <plutosvg.h>
+#include "dyn_plutosvg.h"
 #endif
 #if defined(IMGUI_ENABLE_FREETYPE_LUNASVG) || defined (IMGUI_ENABLE_FREETYPE_PLUTOSVG)
 #if !((FREETYPE_MAJOR >= 2) && (FREETYPE_MINOR >= 12))
@@ -170,16 +171,16 @@ struct ImGui_ImplFreeType_FontSrcBakedData
 
 bool ImGui_ImplFreeType_FontSrcData::InitFont(FT_Library ft_library, const ImFontConfig* src, ImGuiFreeTypeLoaderFlags extra_font_loader_flags)
 {
-    FT_Error error = FT_New_Memory_Face(ft_library, (const FT_Byte*)src->FontData, (FT_Long)src->FontDataSize, (FT_Long)src->FontNo, &FtFace);
+    FT_Error error = g_dyn_freetype.FT_New_Memory_Face(ft_library, (const FT_Byte*)src->FontData, (FT_Long)src->FontDataSize, (FT_Long)src->FontNo, &FtFace);
     if (error != 0)
         return false;
-    error = FT_Select_Charmap(FtFace, FT_ENCODING_UNICODE);
+    error = g_dyn_freetype.FT_Select_Charmap(FtFace, FT_ENCODING_UNICODE);
     if (error != 0)
         return false;
 
     FT_MM_Var* mmvar;
     WeightCoordIndex = -1;
-    if (FT_IS_SFNT(FtFace) && ((error = FT_Get_MM_Var(FtFace, &mmvar)) == 0))
+    if (FT_IS_SFNT(FtFace) && ((error = g_dyn_freetype.FT_Get_MM_Var(FtFace, &mmvar)) == 0))
     {
       VarDesignCoords = new FT_Fixed[mmvar->num_axis];
       VarDesignNumAxis = mmvar->num_axis;
@@ -199,7 +200,7 @@ bool ImGui_ImplFreeType_FontSrcData::InitFont(FT_Library ft_library, const ImFon
           VarDesignNumAxis = 0;
       }
 
-      FT_Done_MM_Var(ft_library, mmvar);
+      g_dyn_freetype.FT_Done_MM_Var(ft_library, mmvar);
     }
 
     // Convert to FreeType flags (NB: Bold and Oblique are processed separately)
@@ -239,14 +240,14 @@ void ImGui_ImplFreeType_FontSrcData::CloseFont()
 
     if (FtFace)
     {
-        FT_Done_Face(FtFace);
+        g_dyn_freetype.FT_Done_Face(FtFace);
         FtFace = nullptr;
     }
 }
 
 static const FT_Glyph_Metrics* ImGui_ImplFreeType_LoadGlyph(ImGui_ImplFreeType_FontSrcData* src_data, uint32_t codepoint)
 {
-    uint32_t glyph_index = FT_Get_Char_Index(src_data->FtFace, codepoint);
+    uint32_t glyph_index = g_dyn_freetype.FT_Get_Char_Index(src_data->FtFace, codepoint);
     if (glyph_index == 0)
         return nullptr;
 
@@ -255,7 +256,7 @@ static const FT_Glyph_Metrics* ImGui_ImplFreeType_LoadGlyph(ImGui_ImplFreeType_F
     // - https://github.com/ocornut/imgui/issues/4567
     // - https://github.com/ocornut/imgui/issues/4566
     // You can use FreeType 2.10, or the patched version of 2.11.0 in VcPkg, or probably any upcoming FreeType version.
-    FT_Error error = FT_Load_Glyph(src_data->FtFace, glyph_index, src_data->LoadFlags);
+    FT_Error error = g_dyn_freetype.FT_Load_Glyph(src_data->FtFace, glyph_index, src_data->LoadFlags);
     if (error)
         return nullptr;
 
@@ -272,10 +273,10 @@ static const FT_Glyph_Metrics* ImGui_ImplFreeType_LoadGlyph(ImGui_ImplFreeType_F
 
     // Apply convenience transform (this is not picking from real "Bold"/"Italic" fonts! Merely applying FreeType helper transform. Oblique == Slanting)
     if (src_data->UserFlags & ImGuiFreeTypeLoaderFlags_Bold)
-        FT_GlyphSlot_Embolden(slot);
+        g_dyn_freetype.FT_GlyphSlot_Embolden(slot);
     if (src_data->UserFlags & ImGuiFreeTypeLoaderFlags_Oblique)
     {
-        FT_GlyphSlot_Oblique(slot);
+        g_dyn_freetype.FT_GlyphSlot_Oblique(slot);
         //FT_BBox bbox;
         //FT_Outline_Get_BBox(&slot->outline, &bbox);
         //slot->metrics.width = bbox.xMax - bbox.xMin;
@@ -381,7 +382,7 @@ static bool ImGui_ImplFreeType_LoaderInit(ImFontAtlas* atlas)
     bd->MemoryManager.realloc = &FreeType_Realloc;
 
     // https://www.freetype.org/freetype2/docs/reference/ft2-module_management.html#FT_New_Library
-    FT_Error error = FT_New_Library(&bd->MemoryManager, &bd->Library);
+    FT_Error error = g_dyn_freetype.FT_New_Library(&bd->MemoryManager, &bd->Library);
     if (error != 0)
     {
         IM_DELETE(bd);
@@ -389,11 +390,11 @@ static bool ImGui_ImplFreeType_LoaderInit(ImFontAtlas* atlas)
     }
 
     // If you don't call FT_Add_Default_Modules() the rest of code may work, but FreeType won't use our custom allocator.
-    FT_Add_Default_Modules(bd->Library);
+    g_dyn_freetype.FT_Add_Default_Modules(bd->Library);
 
 #ifdef IMGUI_ENABLE_FREETYPE_PLUTOSVG
     // With plutosvg, use provided hooks
-    FT_Property_Set(bd->Library, "ot-svg", "svg-hooks", plutosvg_ft_svg_hooks());
+    g_dyn_freetype.FT_Property_Set(bd->Library, "ot-svg", "svg-hooks", g_dyn_plutosvg.plutosvg_ft_svg_hooks());
 #endif // IMGUI_ENABLE_FREETYPE_PLUTOSVG
 
     // Store our data
@@ -406,7 +407,7 @@ static void ImGui_ImplFreeType_LoaderShutdown(ImFontAtlas* atlas)
 {
     ImGui_ImplFreeType_Data* bd = (ImGui_ImplFreeType_Data*)atlas->FontLoaderData;
     IM_ASSERT(bd != nullptr);
-    FT_Done_Library(bd->Library);
+    g_dyn_freetype.FT_Done_Library(bd->Library);
     IM_DELETE(bd);
     atlas->FontLoaderData = nullptr;
 }
@@ -451,8 +452,8 @@ static bool ImGui_ImplFreeType_FontBakedInit(ImFontAtlas* atlas, ImFontConfig* s
     IM_ASSERT(bd_baked_data != nullptr);
     IM_PLACEMENT_NEW(bd_baked_data) ImGui_ImplFreeType_FontSrcBakedData();
 
-    FT_New_Size(bd_font_data->FtFace, &bd_baked_data->FtSize);
-    FT_Activate_Size(bd_baked_data->FtSize);
+    g_dyn_freetype.FT_New_Size(bd_font_data->FtFace, &bd_baked_data->FtSize);
+    g_dyn_freetype.FT_Activate_Size(bd_baked_data->FtSize);
     bd_baked_data->FtWeight = 0;
     if (bd_font_data->WeightCoordIndex >= 0)
     {
@@ -460,11 +461,11 @@ static bool ImGui_ImplFreeType_FontBakedInit(ImFontAtlas* atlas, ImFontConfig* s
         if (bd_baked_data->FtWeight != 0)
         {
             bd_font_data->VarDesignCoords[bd_font_data->WeightCoordIndex] = bd_baked_data->FtWeight;
-            FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, bd_font_data->VarDesignNumAxis, bd_font_data->VarDesignCoords);
+            g_dyn_freetype.FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, bd_font_data->VarDesignNumAxis, bd_font_data->VarDesignCoords);
         }
         else
         {
-            FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, 0, nullptr);
+            g_dyn_freetype.FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, 0, nullptr);
         }
     }
 
@@ -483,7 +484,7 @@ static bool ImGui_ImplFreeType_FontBakedInit(ImFontAtlas* atlas, ImFontConfig* s
     req.height = (uint32_t)(size * 64 * rasterizer_density);
     req.horiResolution = 0;
     req.vertResolution = 0;
-    FT_Request_Size(bd_font_data->FtFace, &req);
+    g_dyn_freetype.FT_Request_Size(bd_font_data->FtFace, &req);
 
     // Output
     if (src->MergeMode == false)
@@ -509,14 +510,14 @@ static void ImGui_ImplFreeType_FontBakedDestroy(ImFontAtlas* atlas, ImFontConfig
     ImGui_ImplFreeType_FontSrcBakedData* bd_baked_data = (ImGui_ImplFreeType_FontSrcBakedData*)loader_data_for_baked_src;
     IM_ASSERT(bd_baked_data != nullptr);
     bd_font_data->LastSize = (bd_font_data->LastSize == bd_baked_data->FtSize) ? nullptr : bd_font_data->LastSize;
-    FT_Done_Size(bd_baked_data->FtSize);
+    g_dyn_freetype.FT_Done_Size(bd_baked_data->FtSize);
     bd_baked_data->~ImGui_ImplFreeType_FontSrcBakedData(); // ~IM_PLACEMENT_DELETE()
 }
 
 static bool ImGui_ImplFreeType_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConfig* src, ImFontBaked* baked, void* loader_data_for_baked_src, ImWchar codepoint, ImFontGlyph* out_glyph, float* out_advance_x)
 {
     ImGui_ImplFreeType_FontSrcData* bd_font_data = (ImGui_ImplFreeType_FontSrcData*)src->FontLoaderData;
-    uint32_t glyph_index = FT_Get_Char_Index(bd_font_data->FtFace, codepoint);
+    uint32_t glyph_index = g_dyn_freetype.FT_Get_Char_Index(bd_font_data->FtFace, codepoint);
     if (glyph_index == 0)
         return false;
 
@@ -527,7 +528,7 @@ static bool ImGui_ImplFreeType_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConf
     if ( bd_font_data->LastSize != bd_baked_data->FtSize)
     {
         bd_font_data->LastSize = bd_baked_data->FtSize;
-        FT_Activate_Size(bd_baked_data->FtSize);
+        g_dyn_freetype.FT_Activate_Size(bd_baked_data->FtSize);
     }
     if (bd_font_data->WeightCoordIndex >= 0 && bd_font_data->LastWeight != bd_baked_data->FtWeight)
     {
@@ -535,11 +536,11 @@ static bool ImGui_ImplFreeType_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConf
         if (bd_baked_data->FtWeight != 0)
         {
           bd_font_data->VarDesignCoords[bd_font_data->WeightCoordIndex] = bd_baked_data->FtWeight;
-          FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, bd_font_data->VarDesignNumAxis, bd_font_data->VarDesignCoords);
+          g_dyn_freetype.FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, bd_font_data->VarDesignNumAxis, bd_font_data->VarDesignCoords);
         }
         else
         {
-          FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, 0, nullptr);
+          g_dyn_freetype.FT_Set_Var_Design_Coordinates(bd_font_data->FtFace, 0, nullptr);
         }
     }
 
@@ -566,7 +567,7 @@ static bool ImGui_ImplFreeType_FontBakedLoadGlyph(ImFontAtlas* atlas, ImFontConf
 
     // Render glyph into a bitmap (currently held by FreeType)
     FT_Render_Mode render_mode = (bd_font_data->UserFlags & ImGuiFreeTypeLoaderFlags_Monochrome) ? FT_RENDER_MODE_MONO : FT_RENDER_MODE_NORMAL;
-    error = FT_Render_Glyph(slot, render_mode);
+    error = g_dyn_freetype.FT_Render_Glyph(slot, render_mode);
     const FT_Bitmap* ft_bitmap = &slot->bitmap;
     if (error != 0 || ft_bitmap == nullptr)
         return false;
@@ -623,7 +624,7 @@ static bool ImGui_ImplFreetype_FontSrcContainsGlyph(ImFontAtlas* atlas, ImFontCo
 {
     IM_UNUSED(atlas);
     ImGui_ImplFreeType_FontSrcData* bd_font_data = (ImGui_ImplFreeType_FontSrcData*)src->FontLoaderData;
-    int glyph_index = FT_Get_Char_Index(bd_font_data->FtFace, codepoint);
+    int glyph_index = g_dyn_freetype.FT_Get_Char_Index(bd_font_data->FtFace, codepoint);
     return glyph_index != 0;
 }
 

@@ -31,6 +31,7 @@ add_library(util
   dyn_shaderc.h
   dyn_spirv_cross.h
   dyn_libpng.h
+  dyn_libs.cpp
   dyn_sdl.h
   dyn_sqlite.h
   elf_file.cpp
@@ -203,9 +204,16 @@ if(ENABLE_VULKAN)
 endif()
 
 # shaderc/spirv-cross is loaded dynamically to reduce module loads on startup.
+get_target_property(FREETYPE_INCLUDE_DIRS freetype INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(PLUTOSVG_INCLUDE_DIRS plutosvg::plutosvg INTERFACE_INCLUDE_DIRECTORIES)
 get_target_property(SHADERC_INCLUDE_DIR Shaderc::shaderc_shared INTERFACE_INCLUDE_DIRECTORIES)
 get_target_property(SPIRV_CROSS_INCLUDE_DIR spirv-cross-c-shared INTERFACE_INCLUDE_DIRECTORIES)
-target_include_directories(util PUBLIC ${SHADERC_INCLUDE_DIR} ${SPIRV_CROSS_INCLUDE_DIR})
+target_include_directories(util PUBLIC
+  ${FREETYPE_INCLUDE_DIRS}
+  ${PLUTOSVG_INCLUDE_DIRS}
+  ${SHADERC_INCLUDE_DIR}
+  ${SPIRV_CROSS_INCLUDE_DIR}
+)
 
 if(NOT ANDROID)
   target_sources(util PRIVATE
@@ -283,9 +291,6 @@ function(add_util_resources target)
 
   # Copy dynamically-loaded libraries into the bundle.
   add_runtime_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared SDL3::SDL3
-                        libjpeg-turbo::jpeg PNG::png_shared WebP::webp WebP::sharpyuv WebP::webpdecoder
-                        WebP::webpdemux WebP::libwebpmux)
-  if(APPLE)
-    add_runtime_libraries(${target} harfbuzz::harfbuzz)
-  endif()
+                        freetype harfbuzz::harfbuzz plutosvg::plutosvg libjpeg-turbo::jpeg PNG::png_shared WebP::webp
+                        WebP::sharpyuv WebP::webpdecoder WebP::webpdemux WebP::libwebpmux)
 endfunction()

@@ -45,6 +45,7 @@ declare -a MANUAL_LIBS=(
 	"libz.so.1"
 
 	"libdiscord-rpc.so"
+	"libplutosvg.so.0"
 	"libshaderc_shared.so"
 	"libspirv-cross-c-shared.so.0"
 	"libsqlite3.so.3"

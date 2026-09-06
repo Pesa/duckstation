@@ -9,6 +9,8 @@
     <ClInclude Include="include\imgui_stdlib.h" />
     <ClInclude Include="include\imgui_freetype.h" />
     <ClInclude Include="include\imgui_internal.h" />
+    <ClInclude Include="include\dyn_freetype.h" />
+    <ClInclude Include="include\dyn_plutosvg.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\imgui_widgets.cpp" />
