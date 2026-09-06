@@ -33,28 +33,6 @@ protected:
 };
 } // namespace
 
-static bool InitializeSDLAudio(Error* error)
-{
-  static bool initialized = false;
-  if (initialized)
-    return true;
-
-  if (!g_dyn_sdl.Open(error))
-    return false;
-
-  // May as well keep it alive until the process exits.
-  if (!g_dyn_sdl.SDL_InitSubSystem(SDL_INIT_AUDIO))
-  {
-    Error::SetStringFmt(error, "SDL_InitSubSystem(SDL_INIT_AUDIO) failed: {}", g_dyn_sdl.SDL_GetError());
-    return false;
-  }
-
-  std::atexit([]() { g_dyn_sdl.SDL_QuitSubSystem(SDL_INIT_AUDIO); });
-
-  initialized = true;
-  return true;
-}
-
 SDLAudioStream::SDLAudioStream(AudioStreamSource* source, u32 channels) : m_source(source), m_channels(channels)
 {
 }
@@ -129,7 +107,8 @@ std::unique_ptr<AudioStream> AudioStream::CreateSDLAudioStream(u32 sample_rate, 
                                                                bool output_latency_minimal, AudioStreamSource* source,
                                                                bool auto_start, Error* error)
 {
-  if (!InitializeSDLAudio(error))
+  // May as well keep it alive until the process exits.
+  if (!g_dyn_sdl.Open(error) || !g_dyn_sdl.InitSubSystem(SDL_INIT_AUDIO, error))
     return {};
 
   std::unique_ptr<SDLAudioStream> stream = std::make_unique<SDLAudioStream>(source, channels);

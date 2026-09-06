@@ -75,7 +75,9 @@ struct DynSDL
   DYN_SDL_FUNCTIONS(ADD_FUNC)
 #undef ADD_FUNC
 
-  bool Open(Error* error);
+  bool Open(Error* const error);
+  bool InitSubSystem(SDL_InitFlags flags, Error* const error);
+  void QuitSubSystem(SDL_InitFlags flags);
 };
 
 extern DynSDL g_dyn_sdl;

@@ -17,6 +17,7 @@
 #include "common/error.h"
 #include "common/log.h"
 
+#include <atomic>
 #include <utility>
 
 LOG_CHANNEL(DynamicLibrary);
@@ -59,6 +60,8 @@ static constexpr int SPIRV_CROSS_MAJOR_VERSION = SPVC_C_API_VERSION_MAJOR;
 namespace {
 struct Locals
 {
+  ~Locals();
+
   DynamicLibrary freetype_library;
   std::once_flag freetype_init_flag;
   DynamicLibrary plutosvg_library;
@@ -73,6 +76,7 @@ struct Locals
   std::once_flag libzip_init_flag;
   DynamicLibrary sdl_library;
   std::once_flag sdl_init_flag;
+  std::atomic<SDL_InitFlags> sdl_init_subsystems{0};
   DynamicLibrary sqlite_library;
   std::once_flag sqlite_init_flag;
   DynamicLibrary shaderc_library;
@@ -80,10 +84,6 @@ struct Locals
   shaderc_compiler_t shaderc_compiler;
   DynamicLibrary spirv_cross_library;
   std::once_flag spirv_cross_init_flag;
-
-#if defined(_DEBUG) || defined(_DEVEL)
-  ~Locals();
-#endif
 };
 } // namespace
 
@@ -99,14 +99,14 @@ DynShaderc g_dyn_shaderc;
 DynSpirvCross g_dyn_spirv_cross;
 static Locals s_locals;
 
-#if defined(_DEBUG) || defined(_DEVEL)
-
 Locals::~Locals()
 {
   DebugAssert(!s_locals.shaderc_compiler);
-}
 
-#endif
+  // Quit any persistent SDL subsystems before unloading the library.
+  if (const SDL_InitFlags active_subsystems = s_locals.sdl_init_subsystems.load(std::memory_order_acquire))
+    g_dyn_sdl.SDL_QuitSubSystem(active_subsystems);
+}
 
 static bool LoadDynLib(const char* libname, int major_version, DynamicLibrary& dynlib, std::once_flag& once_flag,
                        std::span<const DynamicLibrary::SymbolTable> symbols, Error* const error,
@@ -273,13 +273,38 @@ static bool SDLLoadCallback(Error* const error)
   return true;
 }
 
-bool DynSDL::Open(Error* error)
+bool DynSDL::Open(Error* const error)
 {
   if (s_locals.sdl_library.IsOpen()) [[likely]]
     return true;
 
   return LoadDynLib("SDL3", LIBSDL_MAJOR_VERSION, s_locals.sdl_library, s_locals.sdl_init_flag, s_sdl_symbols, error,
                     SDLLoadCallback);
+}
+
+bool DynSDL::InitSubSystem(SDL_InitFlags flags, Error* const error)
+{
+  // anything added?
+  const SDL_InitFlags prev_subsystems = s_locals.sdl_init_subsystems.fetch_or(flags, std::memory_order_acq_rel);
+  const SDL_InitFlags subsystems_to_init = (flags & ~prev_subsystems);
+  if (subsystems_to_init == 0 || SDL_InitSubSystem(subsystems_to_init))
+    return true;
+
+  s_locals.sdl_init_subsystems.fetch_and(~subsystems_to_init, std::memory_order_acq_rel);
+
+  const char* sdl_error = SDL_GetError();
+  Error::SetStringFmt(error, "SDL_InitSubSystem(0x{:08X}) failed: {}", static_cast<u32>(subsystems_to_init),
+                      sdl_error ? sdl_error : "");
+  return false;
+}
+
+void DynSDL::QuitSubSystem(SDL_InitFlags flags)
+{
+  // anything removed?
+  const SDL_InitFlags prev_subsystems = s_locals.sdl_init_subsystems.fetch_and(~flags, std::memory_order_acq_rel);
+  const SDL_InitFlags subsystems_to_release = (flags & prev_subsystems);
+  if (subsystems_to_release != 0)
+    SDL_QuitSubSystem(subsystems_to_release);
 }
 
 static const DynamicLibrary::SymbolTable s_shaderc_symbols[] = {

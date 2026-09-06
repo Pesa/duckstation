@@ -582,15 +582,13 @@ void SDLInputSource::SetHints()
 
 bool SDLInputSource::InitializeSubsystem()
 {
-  if (!g_dyn_sdl.SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC))
+  if (Error error; !g_dyn_sdl.InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC, &error))
   {
-    ERROR_LOG("SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC) failed");
+    ERROR_LOG(error.GetDescription());
     return false;
   }
 
   // we should open the controllers as the connected events come in, so no need to do any more here
-  m_sdl_subsystem_initialized = true;
-
   int mapping_count = 0;
   g_dyn_sdl.SDL_free(g_dyn_sdl.SDL_GetGamepadMappings(&mapping_count));
   INFO_LOG("{} controller mappings are loaded.", mapping_count);
@@ -603,11 +601,7 @@ void SDLInputSource::ShutdownSubsystem()
   while (!m_controllers.empty())
     CloseDevice(m_controllers.begin()->joystick_id);
 
-  if (m_sdl_subsystem_initialized)
-  {
-    g_dyn_sdl.SDL_QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC);
-    m_sdl_subsystem_initialized = false;
-  }
+  g_dyn_sdl.QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC);
 }
 
 void SDLInputSource::PollEvents()
