@@ -30,6 +30,7 @@ add_library(util
   cue_parser.h
   dyn_shaderc.h
   dyn_spirv_cross.h
+  dyn_libpng.h
   dyn_sqlite.h
   elf_file.cpp
   elf_file.h
@@ -100,8 +101,12 @@ add_library(util
 
 target_precompile_headers(util PRIVATE "pch.h")
 target_include_directories(util PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+get_target_property(JPEG_INCLUDE_DIRS libjpeg-turbo::jpeg INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(PNG_INCLUDE_DIRS PNG::png_shared INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(WEBP_INCLUDE_DIRS WebP::webp INTERFACE_INCLUDE_DIRECTORIES)
+target_include_directories(util PRIVATE ${JPEG_INCLUDE_DIRS} ${PNG_INCLUDE_DIRS} ${WEBP_INCLUDE_DIRS})
 target_link_libraries(util PUBLIC common imgui)
-target_link_libraries(util PRIVATE libchdr lzma libjpeg-turbo::jpeg PNG::png_shared WebP::webp
+target_link_libraries(util PRIVATE libchdr lzma
                                    plutosvg::plutosvg ZLIB::ZLIB SoundTouch::SoundTouchDLL xxhash
                                    libzip::zip zstd::libzstd_shared reshadefx)
 
@@ -274,8 +279,10 @@ function(add_util_resources target)
     endforeach()
   endif()
 
-  # Copy dynamically-loaded libraries (harfbuzz/shaderc/spirv-cross) into the bundle.
-  bundle_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared)
+  # Copy dynamically-loaded libraries into the bundle.
+  bundle_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared
+                   libjpeg-turbo::jpeg PNG::png_shared WebP::webp WebP::sharpyuv WebP::webpdecoder
+                   WebP::webpdemux WebP::libwebpmux)
   if(APPLE)
     bundle_libraries(${target} harfbuzz::harfbuzz)
   endif()

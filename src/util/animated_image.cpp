@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 
 #include "animated_image.h"
+#include "dyn_libpng.h"
 
 #include "common/assert.h"
 #include "common/bitutils.h"
@@ -13,7 +14,6 @@
 #include "common/string_util.h"
 
 #include <limits>
-#include <png.h>
 
 // clang-format off
 #ifdef _MSC_VER
@@ -321,89 +321,89 @@ std::optional<DynamicHeapArray<u8>> AnimatedImage::SaveToBuffer(std::string_view
 
 static void PNGSetErrorFunction(png_structp png_ptr, Error* error)
 {
-  png_set_error_fn(
+  g_dyn_libpng.png_set_error_fn(
     png_ptr, error,
     [](png_structp png_ptr, png_const_charp message) {
-      Error::SetStringView(static_cast<Error*>(png_get_error_ptr(png_ptr)), message);
-      png_longjmp(png_ptr, 1);
+      Error::SetStringView(static_cast<Error*>(g_dyn_libpng.png_get_error_ptr(png_ptr)), message);
+      g_dyn_libpng.png_longjmp(png_ptr, 1);
     },
     [](png_structp png_ptr, png_const_charp message) { WARNING_LOG("libpng warning: {}", message); });
 }
 
 static bool PNGCommonLoader(AnimatedImage* image, png_structp png_ptr, png_infop info_ptr)
 {
-  png_read_info(png_ptr, info_ptr);
+  g_dyn_libpng.png_read_info(png_ptr, info_ptr);
 
-  const u32 width = png_get_image_width(png_ptr, info_ptr);
-  const u32 height = png_get_image_height(png_ptr, info_ptr);
-  const u32 num_frames = png_get_num_frames(png_ptr, info_ptr);
-  const png_byte color_type = png_get_color_type(png_ptr, info_ptr);
-  const png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+  const u32 width = g_dyn_libpng.png_get_image_width(png_ptr, info_ptr);
+  const u32 height = g_dyn_libpng.png_get_image_height(png_ptr, info_ptr);
+  const u32 num_frames = g_dyn_libpng.png_get_num_frames(png_ptr, info_ptr);
+  const png_byte color_type = g_dyn_libpng.png_get_color_type(png_ptr, info_ptr);
+  const png_byte bit_depth = g_dyn_libpng.png_get_bit_depth(png_ptr, info_ptr);
 
   if (num_frames == 0)
-    png_error(png_ptr, "Image has zero frames");
+    g_dyn_libpng.png_error(png_ptr, "Image has zero frames");
 
   // Read any color_type into 8bit depth, RGBA format.
   // See http://www.libpng.org/pub/png/libpng-manual.txt
 
   if (bit_depth == 16)
-    png_set_strip_16(png_ptr);
+    g_dyn_libpng.png_set_strip_16(png_ptr);
 
   if (color_type == PNG_COLOR_TYPE_PALETTE)
-    png_set_palette_to_rgb(png_ptr);
+    g_dyn_libpng.png_set_palette_to_rgb(png_ptr);
 
   // PNG_COLOR_TYPE_GRAY_ALPHA is always 8 or 16bit depth.
   if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
-    png_set_expand_gray_1_2_4_to_8(png_ptr);
+    g_dyn_libpng.png_set_expand_gray_1_2_4_to_8(png_ptr);
 
-  if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
-    png_set_tRNS_to_alpha(png_ptr);
+  if (g_dyn_libpng.png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
+    g_dyn_libpng.png_set_tRNS_to_alpha(png_ptr);
 
   // These color_type don't have an alpha channel then fill it with 0xff.
   if (color_type == PNG_COLOR_TYPE_RGB || color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_PALETTE)
-    png_set_filler(png_ptr, 0xFF, PNG_FILLER_AFTER);
+    g_dyn_libpng.png_set_filler(png_ptr, 0xFF, PNG_FILLER_AFTER);
 
   if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-    png_set_gray_to_rgb(png_ptr);
+    g_dyn_libpng.png_set_gray_to_rgb(png_ptr);
 
-  png_read_update_info(png_ptr, info_ptr);
+  g_dyn_libpng.png_read_update_info(png_ptr, info_ptr);
 
   DebugAssert(num_frames > 0);
   image->Resize(width, height, num_frames, {1, 10}, false);
   if (!image->IsValid())
-    png_error(png_ptr, "Image dimensions are too large");
+    g_dyn_libpng.png_error(png_ptr, "Image dimensions are too large");
 
   if (num_frames > 1)
   {
     for (u32 i = 0; i < num_frames; i++)
     {
-      png_read_frame_head(png_ptr, info_ptr);
+      g_dyn_libpng.png_read_frame_head(png_ptr, info_ptr);
 
-      const u32 frame_width = png_get_next_frame_width(png_ptr, info_ptr);
-      const u32 frame_height = png_get_next_frame_height(png_ptr, info_ptr);
+      const u32 frame_width = g_dyn_libpng.png_get_next_frame_width(png_ptr, info_ptr);
+      const u32 frame_height = g_dyn_libpng.png_get_next_frame_height(png_ptr, info_ptr);
       if (frame_width != width || frame_height != height)
-        png_error(png_ptr, "Frame size does not match image size");
+        g_dyn_libpng.png_error(png_ptr, "Frame size does not match image size");
 
-      const u16 delay_num = static_cast<u16>(png_get_next_frame_delay_num(png_ptr, info_ptr));
-      const u16 delay_den = static_cast<u16>(png_get_next_frame_delay_den(png_ptr, info_ptr));
+      const u16 delay_num = static_cast<u16>(g_dyn_libpng.png_get_next_frame_delay_num(png_ptr, info_ptr));
+      const u16 delay_den = static_cast<u16>(g_dyn_libpng.png_get_next_frame_delay_den(png_ptr, info_ptr));
       image->SetDelay(i, {delay_num, std::max<u16>(delay_den, 1)});
 
       // TODO: blending/compose/etc.
-      const int num_passes = png_set_interlace_handling(png_ptr);
+      const int num_passes = g_dyn_libpng.png_set_interlace_handling(png_ptr);
       for (int pass = 0; pass < num_passes; pass++)
       {
         for (u32 y = 0; y < height; y++)
-          png_read_row(png_ptr, reinterpret_cast<png_bytep>(image->GetRowPixels(i, y)), nullptr);
+          g_dyn_libpng.png_read_row(png_ptr, reinterpret_cast<png_bytep>(image->GetRowPixels(i, y)), nullptr);
       }
     }
   }
   else
   {
-    const int num_passes = png_set_interlace_handling(png_ptr);
+    const int num_passes = g_dyn_libpng.png_set_interlace_handling(png_ptr);
     for (int pass = 0; pass < num_passes; pass++)
     {
       for (u32 y = 0; y < height; y++)
-        png_read_row(png_ptr, reinterpret_cast<png_bytep>(image->GetRowPixels(0, y)), nullptr);
+        g_dyn_libpng.png_read_row(png_ptr, reinterpret_cast<png_bytep>(image->GetRowPixels(0, y)), nullptr);
     }
   }
 
@@ -412,34 +412,37 @@ static bool PNGCommonLoader(AnimatedImage* image, png_structp png_ptr, png_infop
 
 bool PNGFileLoader(AnimatedImage* image, std::string_view filename, std::FILE* fp, Error* error)
 {
-  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr)
   {
     Error::SetStringView(error, "png_create_read_struct() failed.");
     return false;
   }
 
-  png_infop info_ptr = png_create_info_struct(png_ptr);
+  png_infop info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
-    png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+    g_dyn_libpng.png_destroy_read_struct(&png_ptr, nullptr, nullptr);
     return false;
   }
 
-  ScopedGuard cleanup([&png_ptr, &info_ptr]() { png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
+  ScopedGuard cleanup([&png_ptr, &info_ptr]() { g_dyn_libpng.png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
   {
     image->Invalidate();
     return false;
   }
 
-  png_set_read_fn(png_ptr, fp, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-    std::FILE* fp = static_cast<std::FILE*>(png_get_io_ptr(png_ptr));
+  g_dyn_libpng.png_set_read_fn(png_ptr, fp, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
+    std::FILE* fp = static_cast<std::FILE*>(g_dyn_libpng.png_get_io_ptr(png_ptr));
     if (std::fread(data_ptr, size, 1, fp) != 1)
-      png_error(png_ptr, "fread() failed");
+      g_dyn_libpng.png_error(png_ptr, "fread() failed");
   });
 
   return PNGCommonLoader(image, png_ptr, info_ptr);
@@ -447,27 +450,30 @@ bool PNGFileLoader(AnimatedImage* image, std::string_view filename, std::FILE* f
 
 bool PNGBufferLoader(AnimatedImage* image, std::span<const u8> data, Error* error)
 {
-  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr)
   {
     Error::SetStringView(error, "png_create_read_struct() failed.");
     return false;
   }
 
-  png_infop info_ptr = png_create_info_struct(png_ptr);
+  png_infop info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
-    png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+    g_dyn_libpng.png_destroy_read_struct(&png_ptr, nullptr, nullptr);
     return false;
   }
 
-  ScopedGuard cleanup([&png_ptr, &info_ptr]() { png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
+  ScopedGuard cleanup([&png_ptr, &info_ptr]() { g_dyn_libpng.png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
 
   std::vector<png_bytep> row_pointers;
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
   {
     image->Invalidate();
     return false;
@@ -480,10 +486,10 @@ bool PNGBufferLoader(AnimatedImage* image, std::span<const u8> data, Error* erro
   };
   IOData iodata = {data, 0};
 
-  png_set_read_fn(png_ptr, &iodata, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-    IOData* data = static_cast<IOData*>(png_get_io_ptr(png_ptr));
+  g_dyn_libpng.png_set_read_fn(png_ptr, &iodata, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
+    IOData* data = static_cast<IOData*>(g_dyn_libpng.png_get_io_ptr(png_ptr));
     if (data->buffer_pos > data->buffer.size() || size > (data->buffer.size() - data->buffer_pos))
-      png_error(png_ptr, "Unexpected end of PNG data");
+      g_dyn_libpng.png_error(png_ptr, "Unexpected end of PNG data");
 
     std::memcpy(data_ptr, data->buffer.data() + data->buffer_pos, size);
     data->buffer_pos += size;
@@ -494,46 +500,49 @@ bool PNGBufferLoader(AnimatedImage* image, std::span<const u8> data, Error* erro
 
 static void PNGSaveCommon(const AnimatedImage& image, png_structp png_ptr, png_infop info_ptr, u8 quality)
 {
-  png_set_compression_level(png_ptr, std::clamp(quality / 10, 0, 9));
-  png_set_IHDR(png_ptr, info_ptr, image.GetWidth(), image.GetHeight(), 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE,
-               PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+  g_dyn_libpng.png_set_compression_level(png_ptr, std::clamp(quality / 10, 0, 9));
+  g_dyn_libpng.png_set_IHDR(png_ptr, info_ptr, image.GetWidth(), image.GetHeight(), 8, PNG_COLOR_TYPE_RGBA,
+                            PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
   const u32 width = image.GetWidth();
   const u32 height = image.GetHeight();
   const u32 frames = image.GetFrames();
   if (frames > 1)
   {
-    if (!png_set_acTL(png_ptr, info_ptr, frames, 0))
-      png_error(png_ptr, "png_set_acTL() failed");
+    if (!g_dyn_libpng.png_set_acTL(png_ptr, info_ptr, frames, 0))
+      g_dyn_libpng.png_error(png_ptr, "png_set_acTL() failed");
 
-    png_write_info(png_ptr, info_ptr);
+    g_dyn_libpng.png_write_info(png_ptr, info_ptr);
 
     for (u32 i = 0; i < frames; i++)
     {
       const AnimatedImage::FrameDelay& fd = image.GetFrameDelay(i);
-      png_write_frame_head(png_ptr, info_ptr, width, height, 0, 0, fd.numerator, fd.denominator, PNG_DISPOSE_OP_NONE,
-                           PNG_BLEND_OP_SOURCE);
+      g_dyn_libpng.png_write_frame_head(png_ptr, info_ptr, width, height, 0, 0, fd.numerator, fd.denominator,
+                                        PNG_DISPOSE_OP_NONE, PNG_BLEND_OP_SOURCE);
 
       for (u32 y = 0; y < height; ++y)
-        png_write_row(png_ptr, (png_bytep)image.GetRowPixels(i, y));
+        g_dyn_libpng.png_write_row(png_ptr, (png_bytep)image.GetRowPixels(i, y));
 
-      png_write_frame_tail(png_ptr, info_ptr);
+      g_dyn_libpng.png_write_frame_tail(png_ptr, info_ptr);
     }
   }
   else
   {
     // only one frame
-    png_write_info(png_ptr, info_ptr);
+    g_dyn_libpng.png_write_info(png_ptr, info_ptr);
     for (u32 y = 0; y < height; ++y)
-      png_write_row(png_ptr, (png_bytep)image.GetRowPixels(0, y));
+      g_dyn_libpng.png_write_row(png_ptr, (png_bytep)image.GetRowPixels(0, y));
   }
 
-  png_write_end(png_ptr, nullptr);
+  g_dyn_libpng.png_write_end(png_ptr, nullptr);
 }
 
 bool PNGFileSaver(const AnimatedImage& image, std::string_view filename, std::FILE* fp, u8 quality, Error* error)
 {
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   png_infop info_ptr = nullptr;
   if (!png_ptr)
   {
@@ -543,10 +552,10 @@ bool PNGFileSaver(const AnimatedImage& image, std::string_view filename, std::FI
 
   ScopedGuard cleanup([&png_ptr, &info_ptr]() {
     if (png_ptr)
-      png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
+      g_dyn_libpng.png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
   });
 
-  info_ptr = png_create_info_struct(png_ptr);
+  info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
@@ -554,14 +563,14 @@ bool PNGFileSaver(const AnimatedImage& image, std::string_view filename, std::FI
   }
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
     return false;
 
-  png_set_write_fn(
+  g_dyn_libpng.png_set_write_fn(
     png_ptr, fp,
     [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-      if (std::fwrite(data_ptr, size, 1, static_cast<std::FILE*>(png_get_io_ptr(png_ptr))) != 1)
-        png_error(png_ptr, "fwrite() failed");
+      if (std::fwrite(data_ptr, size, 1, static_cast<std::FILE*>(g_dyn_libpng.png_get_io_ptr(png_ptr))) != 1)
+        g_dyn_libpng.png_error(png_ptr, "fwrite() failed");
     },
     [](png_structp png_ptr) {});
 
@@ -571,7 +580,10 @@ bool PNGFileSaver(const AnimatedImage& image, std::string_view filename, std::FI
 
 bool PNGBufferSaver(const AnimatedImage& image, DynamicHeapArray<u8>* data, u8 quality, Error* error)
 {
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   png_infop info_ptr = nullptr;
   if (!png_ptr)
   {
@@ -581,10 +593,10 @@ bool PNGBufferSaver(const AnimatedImage& image, DynamicHeapArray<u8>* data, u8 q
 
   ScopedGuard cleanup([&png_ptr, &info_ptr]() {
     if (png_ptr)
-      png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
+      g_dyn_libpng.png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
   });
 
-  info_ptr = png_create_info_struct(png_ptr);
+  info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
@@ -601,15 +613,15 @@ bool PNGBufferSaver(const AnimatedImage& image, DynamicHeapArray<u8>* data, u8 q
   data->resize(static_cast<size_t>(image.GetFrameSize()) * 2);
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
     return false;
 
-  png_set_write_fn(
+  g_dyn_libpng.png_set_write_fn(
     png_ptr, &iodata,
     [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-      IOData* iodata = static_cast<IOData*>(png_get_io_ptr(png_ptr));
+      IOData* iodata = static_cast<IOData*>(g_dyn_libpng.png_get_io_ptr(png_ptr));
       if (size > (std::numeric_limits<size_t>::max() - iodata->buffer_pos))
-        png_error(png_ptr, "PNG output is too large");
+        g_dyn_libpng.png_error(png_ptr, "PNG output is too large");
 
       const size_t new_pos = iodata->buffer_pos + size;
       if (new_pos > iodata->buffer->size())
@@ -620,7 +632,7 @@ bool PNGBufferSaver(const AnimatedImage& image, DynamicHeapArray<u8>* data, u8 q
         iodata->buffer->resize(std::max(new_pos, current_size + growth));
       }
       if (iodata->buffer_pos > iodata->buffer->size() || size > (iodata->buffer->size() - iodata->buffer_pos))
-        png_error(png_ptr, "PNG output buffer is too small");
+        g_dyn_libpng.png_error(png_ptr, "PNG output buffer is too small");
 
       std::memcpy(iodata->buffer->data() + iodata->buffer_pos, data_ptr, size);
       iodata->buffer_pos = new_pos;

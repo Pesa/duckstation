@@ -84,6 +84,7 @@
     <ClInclude Include="object_archive.h" />
     <ClInclude Include="http_cache.h" />
     <ClInclude Include="dyn_sqlite.h" />
+    <ClInclude Include="dyn_libpng.h" />
     <ClInclude Include="sqlite_helpers.h" />
     <ClInclude Include="zip_helpers.h" />
   </ItemGroup>

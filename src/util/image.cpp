@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 
 #include "image.h"
+#include "dyn_libpng.h"
 #include "texture_decompress.h"
 
 #include "common/assert.h"
 #include "common/bitutils.h"
+#include "common/dynamic_library.h"
 #include "common/error.h"
 #include "common/fastjmp.h"
 #include "common/file_system.h"
@@ -21,9 +23,10 @@
 #include <jpeglib.h>
 #include <limits>
 #include <plutosvg.h>
-#include <png.h>
 #include <webp/decode.h>
 #include <webp/encode.h>
+
+#include <mutex>
 
 // clang-format off
 #ifdef _MSC_VER
@@ -32,6 +35,178 @@
 // clang-format on
 
 LOG_CHANNEL(Image);
+
+#define DYN_LIBJPEG_FUNCTIONS(X)                                                                                       \
+  X(jpeg_CreateDecompress)                                                                                             \
+  X(jpeg_CreateCompress)                                                                                               \
+  X(jpeg_destroy_decompress)                                                                                           \
+  X(jpeg_destroy_compress)                                                                                             \
+  X(jpeg_std_error)                                                                                                    \
+  X(jpeg_read_header)                                                                                                  \
+  X(jpeg_start_decompress)                                                                                             \
+  X(jpeg_read_scanlines)                                                                                               \
+  X(jpeg_finish_decompress)                                                                                            \
+  X(jpeg_mem_src)                                                                                                      \
+  X(jpeg_resync_to_restart)                                                                                            \
+  X(jpeg_set_defaults)                                                                                                 \
+  X(jpeg_set_quality)                                                                                                  \
+  X(jpeg_start_compress)                                                                                               \
+  X(jpeg_write_scanlines)                                                                                              \
+  X(jpeg_finish_compress)
+
+#define DYN_LIBWEBP_FUNCTIONS(X)                                                                                       \
+  X(WebPGetInfo)                                                                                                       \
+  X(WebPDecodeRGBAInto)                                                                                                \
+  X(WebPEncodeRGBA)                                                                                                    \
+  X(WebPFree)
+
+namespace {
+struct DynLibJPEG
+{
+  DynamicLibrary library;
+  std::once_flag init_flag;
+
+#define ADD_FUNC(F) decltype(&::F) F;
+  DYN_LIBJPEG_FUNCTIONS(ADD_FUNC)
+#undef ADD_FUNC
+
+  bool Open(Error* error);
+};
+
+struct DynLibWebP
+{
+  DynamicLibrary library;
+  std::once_flag init_flag;
+
+#define ADD_FUNC(F) decltype(&::F) F;
+  DYN_LIBWEBP_FUNCTIONS(ADD_FUNC)
+#undef ADD_FUNC
+
+  bool Open(Error* error);
+};
+
+struct Locals
+{
+  DynamicLibrary png_library;
+  std::once_flag png_init_flag;
+};
+} // namespace
+
+static Locals s_locals;
+static DynLibJPEG s_dyn_libjpeg;
+static DynLibWebP s_dyn_libwebp;
+DynLibPNG g_dyn_libpng;
+
+bool DynLibPNG::Open(Error* error)
+{
+  if (s_locals.png_library.IsOpen())
+    return true;
+
+  std::call_once(s_locals.png_init_flag, [&error]() {
+    Error lerror;
+    DynamicLibrary lib;
+#ifdef _WIN32
+    static constexpr int lib_major_version = -1;
+#else
+    static constexpr int lib_major_version = 16;
+#endif
+    if (!lib.Open(DynamicLibrary::GetVersionedFilename("libpng16", lib_major_version).c_str(), &lerror))
+    {
+      ERROR_LOG("Failed to load libpng: {}", lerror.GetDescription());
+      Error::SetStringFmt(error, "Failed to load libpng: {}", lerror.GetDescription());
+      return;
+    }
+
+    // clang-format off
+    static const DynamicLibrary::SymbolTable png_symbols[] = {
+#define PNG_SYMBOL(F) {#F, (void**)&g_dyn_libpng.F},
+      DYN_LIBPNG_FUNCTIONS(PNG_SYMBOL)
+#undef PNG_SYMBOL
+    };
+    // clang-format on
+
+    if (!lib.ResolveSymbols(png_symbols, std::size(png_symbols), error))
+      return;
+
+    s_locals.png_library = std::move(lib);
+  });
+
+  return s_locals.png_library.IsOpen();
+}
+
+bool DynLibJPEG::Open(Error* error)
+{
+  if (library.IsOpen())
+    return true;
+
+  std::call_once(init_flag, [&error]() {
+    Error lerror;
+    DynamicLibrary lib;
+#ifdef _WIN32
+    static constexpr int lib_major_version = -1;
+#else
+    static constexpr int lib_major_version = 62;
+#endif
+    if (!lib.Open(DynamicLibrary::GetVersionedFilename("jpeg", lib_major_version).c_str(), &lerror))
+    {
+      ERROR_LOG("Failed to load libjpeg: {}", lerror.GetDescription());
+      Error::SetStringFmt(error, "Failed to load libjpeg: {}", lerror.GetDescription());
+      return;
+    }
+
+    // clang-format off
+    static const DynamicLibrary::SymbolTable jpeg_symbols[] = {
+#define JPEG_SYMBOL(F) {#F, (void**)&s_dyn_libjpeg.F},
+      DYN_LIBJPEG_FUNCTIONS(JPEG_SYMBOL)
+#undef JPEG_SYMBOL
+    };
+    // clang-format on
+
+    if (!lib.ResolveSymbols(jpeg_symbols, std::size(jpeg_symbols), error))
+      return;
+
+    s_dyn_libjpeg.library = std::move(lib);
+  });
+
+  return library.IsOpen();
+}
+
+bool DynLibWebP::Open(Error* error)
+{
+  if (library.IsOpen())
+    return true;
+
+  std::call_once(init_flag, [&error]() {
+    Error lerror;
+    DynamicLibrary lib;
+#ifdef _WIN32
+    static constexpr int lib_major_version = -1;
+#else
+    static constexpr int lib_major_version = 7;
+#endif
+    if (!lib.Open(DynamicLibrary::GetVersionedFilename("webp", lib_major_version).c_str(), &lerror))
+    {
+      ERROR_LOG("Failed to load libwebp: {}", lerror.GetDescription());
+      Error::SetStringFmt(error, "Failed to load libwebp: {}", lerror.GetDescription());
+      return;
+    }
+
+    // clang-format off
+    static const DynamicLibrary::SymbolTable webp_symbols[] = {
+#define WEBP_SYMBOL(F) {#F, (void**)&s_dyn_libwebp.F},
+      DYN_LIBWEBP_FUNCTIONS(WEBP_SYMBOL)
+#undef WEBP_SYMBOL
+    };
+    // clang-format on
+
+    if (!lib.ResolveSymbols(webp_symbols, std::size(webp_symbols), error))
+      return;
+
+    s_dyn_libwebp.library = std::move(lib);
+  });
+
+  return library.IsOpen();
+}
 
 static bool PNGBufferLoader(Image* image, std::span<const u8> data, Error* error);
 static bool PNGBufferSaver(const Image& image, DynamicHeapArray<u8>* data, u8 quality, Error* error);
@@ -948,61 +1123,61 @@ void Image::FlipY()
 
 static void PNGSetErrorFunction(png_structp png_ptr, Error* error)
 {
-  png_set_error_fn(
+  g_dyn_libpng.png_set_error_fn(
     png_ptr, error,
     [](png_structp png_ptr, png_const_charp message) {
-      Error::SetStringView(static_cast<Error*>(png_get_error_ptr(png_ptr)), message);
-      png_longjmp(png_ptr, 1);
+      Error::SetStringView(static_cast<Error*>(g_dyn_libpng.png_get_error_ptr(png_ptr)), message);
+      g_dyn_libpng.png_longjmp(png_ptr, 1);
     },
     [](png_structp png_ptr, png_const_charp message) { WARNING_LOG("libpng warning: {}", message); });
 }
 
 static bool PNGCommonLoader(Image* image, png_structp png_ptr, png_infop info_ptr)
 {
-  png_read_info(png_ptr, info_ptr);
+  g_dyn_libpng.png_read_info(png_ptr, info_ptr);
 
-  const u32 width = png_get_image_width(png_ptr, info_ptr);
-  const u32 height = png_get_image_height(png_ptr, info_ptr);
-  const png_byte color_type = png_get_color_type(png_ptr, info_ptr);
-  const png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+  const u32 width = g_dyn_libpng.png_get_image_width(png_ptr, info_ptr);
+  const u32 height = g_dyn_libpng.png_get_image_height(png_ptr, info_ptr);
+  const png_byte color_type = g_dyn_libpng.png_get_color_type(png_ptr, info_ptr);
+  const png_byte bit_depth = g_dyn_libpng.png_get_bit_depth(png_ptr, info_ptr);
 
   // Read any color_type into 8bit depth, RGBA format.
   // See http://www.libpng.org/pub/png/libpng-manual.txt
 
   if (bit_depth == 16)
-    png_set_strip_16(png_ptr);
+    g_dyn_libpng.png_set_strip_16(png_ptr);
 
   if (color_type == PNG_COLOR_TYPE_PALETTE)
-    png_set_palette_to_rgb(png_ptr);
+    g_dyn_libpng.png_set_palette_to_rgb(png_ptr);
 
   // PNG_COLOR_TYPE_GRAY_ALPHA is always 8 or 16bit depth.
   if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
-    png_set_expand_gray_1_2_4_to_8(png_ptr);
+    g_dyn_libpng.png_set_expand_gray_1_2_4_to_8(png_ptr);
 
-  if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
-    png_set_tRNS_to_alpha(png_ptr);
+  if (g_dyn_libpng.png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS))
+    g_dyn_libpng.png_set_tRNS_to_alpha(png_ptr);
 
   // These color_type don't have an alpha channel then fill it with 0xff.
   if (color_type == PNG_COLOR_TYPE_RGB || color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_PALETTE)
-    png_set_filler(png_ptr, 0xFF, PNG_FILLER_AFTER);
+    g_dyn_libpng.png_set_filler(png_ptr, 0xFF, PNG_FILLER_AFTER);
 
   if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
-    png_set_gray_to_rgb(png_ptr);
+    g_dyn_libpng.png_set_gray_to_rgb(png_ptr);
 
-  png_read_update_info(png_ptr, info_ptr);
+  g_dyn_libpng.png_read_update_info(png_ptr, info_ptr);
 
   image->Resize(width, height, ImageFormat::RGBA8, false);
   if (!image->IsValid())
   {
-    png_error(png_ptr, "Image dimensions are too large");
+    g_dyn_libpng.png_error(png_ptr, "Image dimensions are too large");
     return false;
   }
 
-  const int passes = png_set_interlace_handling(png_ptr);
+  const int passes = g_dyn_libpng.png_set_interlace_handling(png_ptr);
   for (int pass = 0; pass < passes; pass++)
   {
     for (u32 y = 0; y < height; y++)
-      png_read_row(png_ptr, reinterpret_cast<png_bytep>(image->GetRowPixels(y)), nullptr);
+      g_dyn_libpng.png_read_row(png_ptr, reinterpret_cast<png_bytep>(image->GetRowPixels(y)), nullptr);
   }
 
   return true;
@@ -1010,34 +1185,37 @@ static bool PNGCommonLoader(Image* image, png_structp png_ptr, png_infop info_pt
 
 bool PNGFileLoader(Image* image, std::string_view filename, std::FILE* fp, Error* error)
 {
-  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr)
   {
     Error::SetStringView(error, "png_create_read_struct() failed.");
     return false;
   }
 
-  png_infop info_ptr = png_create_info_struct(png_ptr);
+  png_infop info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
-    png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+    g_dyn_libpng.png_destroy_read_struct(&png_ptr, nullptr, nullptr);
     return false;
   }
 
-  ScopedGuard cleanup([&png_ptr, &info_ptr]() { png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
+  ScopedGuard cleanup([&png_ptr, &info_ptr]() { g_dyn_libpng.png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
   {
     image->Invalidate();
     return false;
   }
 
-  png_set_read_fn(png_ptr, fp, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-    std::FILE* fp = static_cast<std::FILE*>(png_get_io_ptr(png_ptr));
+  g_dyn_libpng.png_set_read_fn(png_ptr, fp, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
+    std::FILE* fp = static_cast<std::FILE*>(g_dyn_libpng.png_get_io_ptr(png_ptr));
     if (std::fread(data_ptr, size, 1, fp) != 1)
-      png_error(png_ptr, "fread() failed");
+      g_dyn_libpng.png_error(png_ptr, "fread() failed");
   });
 
   return PNGCommonLoader(image, png_ptr, info_ptr);
@@ -1045,25 +1223,28 @@ bool PNGFileLoader(Image* image, std::string_view filename, std::FILE* fp, Error
 
 bool PNGBufferLoader(Image* image, std::span<const u8> data, Error* error)
 {
-  png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr)
   {
     Error::SetStringView(error, "png_create_read_struct() failed.");
     return false;
   }
 
-  png_infop info_ptr = png_create_info_struct(png_ptr);
+  png_infop info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
-    png_destroy_read_struct(&png_ptr, nullptr, nullptr);
+    g_dyn_libpng.png_destroy_read_struct(&png_ptr, nullptr, nullptr);
     return false;
   }
 
-  ScopedGuard cleanup([&png_ptr, &info_ptr]() { png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
+  ScopedGuard cleanup([&png_ptr, &info_ptr]() { g_dyn_libpng.png_destroy_read_struct(&png_ptr, &info_ptr, nullptr); });
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
   {
     image->Invalidate();
     return false;
@@ -1076,8 +1257,8 @@ bool PNGBufferLoader(Image* image, std::span<const u8> data, Error* error)
   };
   IOData iodata = {data, 0};
 
-  png_set_read_fn(png_ptr, &iodata, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-    IOData* data = static_cast<IOData*>(png_get_io_ptr(png_ptr));
+  g_dyn_libpng.png_set_read_fn(png_ptr, &iodata, [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
+    IOData* data = static_cast<IOData*>(g_dyn_libpng.png_get_io_ptr(png_ptr));
     const size_t read_size = std::min<size_t>(data->buffer.size() - data->buffer_pos, size);
     if (read_size > 0)
     {
@@ -1091,20 +1272,23 @@ bool PNGBufferLoader(Image* image, std::span<const u8> data, Error* error)
 
 static void PNGSaveCommon(const Image& image, png_structp png_ptr, png_infop info_ptr, u8 quality)
 {
-  png_set_compression_level(png_ptr, std::clamp(quality / 10, 0, 9));
-  png_set_IHDR(png_ptr, info_ptr, image.GetWidth(), image.GetHeight(), 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE,
-               PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-  png_write_info(png_ptr, info_ptr);
+  g_dyn_libpng.png_set_compression_level(png_ptr, std::clamp(quality / 10, 0, 9));
+  g_dyn_libpng.png_set_IHDR(png_ptr, info_ptr, image.GetWidth(), image.GetHeight(), 8, PNG_COLOR_TYPE_RGBA,
+                            PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+  g_dyn_libpng.png_write_info(png_ptr, info_ptr);
 
   for (u32 y = 0; y < image.GetHeight(); ++y)
-    png_write_row(png_ptr, (png_bytep)image.GetRowPixels(y));
+    g_dyn_libpng.png_write_row(png_ptr, (png_bytep)image.GetRowPixels(y));
 
-  png_write_end(png_ptr, nullptr);
+  g_dyn_libpng.png_write_end(png_ptr, nullptr);
 }
 
 bool PNGFileSaver(const Image& image, std::string_view filename, std::FILE* fp, u8 quality, Error* error)
 {
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   png_infop info_ptr = nullptr;
   if (!png_ptr)
   {
@@ -1114,10 +1298,10 @@ bool PNGFileSaver(const Image& image, std::string_view filename, std::FILE* fp, 
 
   ScopedGuard cleanup([&png_ptr, &info_ptr]() {
     if (png_ptr)
-      png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
+      g_dyn_libpng.png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
   });
 
-  info_ptr = png_create_info_struct(png_ptr);
+  info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
@@ -1125,14 +1309,14 @@ bool PNGFileSaver(const Image& image, std::string_view filename, std::FILE* fp, 
   }
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
     return false;
 
-  png_set_write_fn(
+  g_dyn_libpng.png_set_write_fn(
     png_ptr, fp,
     [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-      if (std::fwrite(data_ptr, size, 1, static_cast<std::FILE*>(png_get_io_ptr(png_ptr))) != 1)
-        png_error(png_ptr, "fwrite() failed");
+      if (std::fwrite(data_ptr, size, 1, static_cast<std::FILE*>(g_dyn_libpng.png_get_io_ptr(png_ptr))) != 1)
+        g_dyn_libpng.png_error(png_ptr, "fwrite() failed");
     },
     [](png_structp png_ptr) {});
 
@@ -1142,7 +1326,10 @@ bool PNGFileSaver(const Image& image, std::string_view filename, std::FILE* fp, 
 
 bool PNGBufferSaver(const Image& image, DynamicHeapArray<u8>* data, u8 quality, Error* error)
 {
-  png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+  if (!g_dyn_libpng.Open(error))
+    return false;
+
+  png_structp png_ptr = g_dyn_libpng.png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   png_infop info_ptr = nullptr;
   if (!png_ptr)
   {
@@ -1152,10 +1339,10 @@ bool PNGBufferSaver(const Image& image, DynamicHeapArray<u8>* data, u8 quality, 
 
   ScopedGuard cleanup([&png_ptr, &info_ptr]() {
     if (png_ptr)
-      png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
+      g_dyn_libpng.png_destroy_write_struct(&png_ptr, info_ptr ? &info_ptr : nullptr);
   });
 
-  info_ptr = png_create_info_struct(png_ptr);
+  info_ptr = g_dyn_libpng.png_create_info_struct(png_ptr);
   if (!info_ptr)
   {
     Error::SetStringView(error, "png_create_info_struct() failed.");
@@ -1172,13 +1359,13 @@ bool PNGBufferSaver(const Image& image, DynamicHeapArray<u8>* data, u8 quality, 
   data->resize(image.GetStorageSize() / 2);
 
   PNGSetErrorFunction(png_ptr, error);
-  if (setjmp(png_jmpbuf(png_ptr)))
+  if (setjmp(*g_dyn_libpng.png_set_longjmp_fn(png_ptr, longjmp, sizeof(jmp_buf))) != 0)
     return false;
 
-  png_set_write_fn(
+  g_dyn_libpng.png_set_write_fn(
     png_ptr, &iodata,
     [](png_structp png_ptr, png_bytep data_ptr, png_size_t size) {
-      IOData* iodata = static_cast<IOData*>(png_get_io_ptr(png_ptr));
+      IOData* iodata = static_cast<IOData*>(g_dyn_libpng.png_get_io_ptr(png_ptr));
       const size_t new_pos = iodata->buffer_pos + size;
       if (new_pos > iodata->buffer->size())
         iodata->buffer->resize(std::max(new_pos, iodata->buffer->size() * 2));
@@ -1201,7 +1388,7 @@ struct JPEGErrorHandler
 
   JPEGErrorHandler(Error* errptr_)
   {
-    jpeg_std_error(&err);
+    s_dyn_libjpeg.jpeg_std_error(&err);
     err.error_exit = &ErrorExit;
     errptr = errptr_;
   }
@@ -1220,6 +1407,9 @@ struct JPEGErrorHandler
 template<typename T>
 static bool WrapJPEGDecompress(Image* image, Error* error, T setup_func)
 {
+  if (!s_dyn_libjpeg.Open(error))
+    return false;
+
   std::vector<u8> scanline;
   jpeg_decompress_struct info = {};
 
@@ -1228,15 +1418,15 @@ static bool WrapJPEGDecompress(Image* image, Error* error, T setup_func)
   JPEGErrorHandler errhandler(error);
   if (fastjmp_set(&errhandler.jbuf) != 0)
   {
-    jpeg_destroy_decompress(&info);
+    s_dyn_libjpeg.jpeg_destroy_decompress(&info);
     return false;
   }
 
   info.err = &errhandler.err;
-  jpeg_create_decompress(&info);
+  s_dyn_libjpeg.jpeg_CreateDecompress(&info, JPEG_LIB_VERSION, sizeof(info));
   setup_func(info);
 
-  const int herr = jpeg_read_header(&info, TRUE);
+  const int herr = s_dyn_libjpeg.jpeg_read_header(&info, TRUE);
   if (herr != JPEG_HEADER_OK)
   {
     Error::SetStringFmt(error, "jpeg_read_header() returned {}", herr);
@@ -1253,7 +1443,7 @@ static bool WrapJPEGDecompress(Image* image, Error* error, T setup_func)
   info.out_color_space = JCS_RGB;
   info.out_color_components = 3;
 
-  if (!jpeg_start_decompress(&info))
+  if (!s_dyn_libjpeg.jpeg_start_decompress(&info))
   {
     Error::SetStringFmt(error, "jpeg_start_decompress() returned failure");
     return false;
@@ -1263,7 +1453,7 @@ static bool WrapJPEGDecompress(Image* image, Error* error, T setup_func)
   if (!image->IsValid())
   {
     Error::SetStringFmt(error, "Image dimensions are too large: {}x{}", info.image_width, info.image_height);
-    jpeg_destroy_decompress(&info);
+    s_dyn_libjpeg.jpeg_destroy_decompress(&info);
     return false;
   }
   scanline.resize(static_cast<size_t>(info.image_width) * 3);
@@ -1272,7 +1462,7 @@ static bool WrapJPEGDecompress(Image* image, Error* error, T setup_func)
   bool result = true;
   for (u32 y = 0; y < info.image_height; y++)
   {
-    if (jpeg_read_scanlines(&info, scanline_buffer, 1) != 1)
+    if (s_dyn_libjpeg.jpeg_read_scanlines(&info, scanline_buffer, 1) != 1)
     {
       Error::SetStringFmt(error, "jpeg_read_scanlines() failed at row {}", y);
       result = false;
@@ -1292,15 +1482,16 @@ static bool WrapJPEGDecompress(Image* image, Error* error, T setup_func)
     }
   }
 
-  jpeg_finish_decompress(&info);
-  jpeg_destroy_decompress(&info);
+  s_dyn_libjpeg.jpeg_finish_decompress(&info);
+  s_dyn_libjpeg.jpeg_destroy_decompress(&info);
   return result;
 }
 
 bool JPEGBufferLoader(Image* image, std::span<const u8> data, Error* error)
 {
   return WrapJPEGDecompress(image, error, [data](jpeg_decompress_struct& info) {
-    jpeg_mem_src(&info, static_cast<const unsigned char*>(data.data()), static_cast<unsigned long>(data.size()));
+    s_dyn_libjpeg.jpeg_mem_src(&info, static_cast<const unsigned char*>(data.data()),
+                               static_cast<unsigned long>(data.size()));
   });
 }
 
@@ -1356,7 +1547,7 @@ bool JPEGFileLoader(Image* image, std::string_view filename, std::FILE* fp, Erro
             }
           }
         },
-      .resync_to_restart = jpeg_resync_to_restart,
+      .resync_to_restart = s_dyn_libjpeg.jpeg_resync_to_restart,
       .term_source = [](j_decompress_ptr cinfo) {},
     },
     .fp = fp,
@@ -1371,6 +1562,9 @@ bool JPEGFileLoader(Image* image, std::string_view filename, std::FILE* fp, Erro
 template<typename T>
 static bool WrapJPEGCompress(const Image& image, u8 quality, Error* error, T setup_func)
 {
+  if (!s_dyn_libjpeg.Open(error))
+    return false;
+
   std::vector<u8> scanline;
   jpeg_compress_struct info = {};
 
@@ -1379,12 +1573,12 @@ static bool WrapJPEGCompress(const Image& image, u8 quality, Error* error, T set
   JPEGErrorHandler errhandler(error);
   if (fastjmp_set(&errhandler.jbuf) != 0)
   {
-    jpeg_destroy_compress(&info);
+    s_dyn_libjpeg.jpeg_destroy_compress(&info);
     return false;
   }
 
   info.err = &errhandler.err;
-  jpeg_create_compress(&info);
+  s_dyn_libjpeg.jpeg_CreateCompress(&info, JPEG_LIB_VERSION, sizeof(info));
   setup_func(info);
 
   info.image_width = image.GetWidth();
@@ -1392,9 +1586,9 @@ static bool WrapJPEGCompress(const Image& image, u8 quality, Error* error, T set
   info.in_color_space = JCS_RGB;
   info.input_components = 3;
 
-  jpeg_set_defaults(&info);
-  jpeg_set_quality(&info, quality, TRUE);
-  jpeg_start_compress(&info, TRUE);
+  s_dyn_libjpeg.jpeg_set_defaults(&info);
+  s_dyn_libjpeg.jpeg_set_quality(&info, quality, TRUE);
+  s_dyn_libjpeg.jpeg_start_compress(&info, TRUE);
 
   scanline.resize(static_cast<size_t>(image.GetWidth()) * 3);
   u8* scanline_buffer[1] = {scanline.data()};
@@ -1414,7 +1608,7 @@ static bool WrapJPEGCompress(const Image& image, u8 quality, Error* error, T set
       *(dst_ptr++) = Truncate8(rgba >> 16);
     }
 
-    if (jpeg_write_scanlines(&info, scanline_buffer, 1) != 1)
+    if (s_dyn_libjpeg.jpeg_write_scanlines(&info, scanline_buffer, 1) != 1)
     {
       Error::SetStringFmt(error, "jpeg_write_scanlines() failed at row {}", y);
       result = false;
@@ -1422,8 +1616,8 @@ static bool WrapJPEGCompress(const Image& image, u8 quality, Error* error, T set
     }
   }
 
-  jpeg_finish_compress(&info);
-  jpeg_destroy_compress(&info);
+  s_dyn_libjpeg.jpeg_finish_compress(&info);
+  s_dyn_libjpeg.jpeg_destroy_compress(&info);
   return result;
 }
 
@@ -1524,8 +1718,11 @@ bool JPEGFileSaver(const Image& image, std::string_view filename, std::FILE* fp,
 
 bool WebPBufferLoader(Image* image, std::span<const u8> data, Error* error)
 {
+  if (!s_dyn_libwebp.Open(error))
+    return false;
+
   int width, height;
-  if (!WebPGetInfo(data.data(), data.size(), &width, &height) || width <= 0 || height <= 0)
+  if (!s_dyn_libwebp.WebPGetInfo(data.data(), data.size(), &width, &height) || width <= 0 || height <= 0)
   {
     Error::SetStringView(error, "WebPGetInfo() failed");
     return false;
@@ -1538,7 +1735,8 @@ bool WebPBufferLoader(Image* image, std::span<const u8> data, Error* error)
     return false;
   }
 
-  if (!WebPDecodeRGBAInto(data.data(), data.size(), image->GetPixels(), image->GetStorageSize(), image->GetPitch()))
+  if (!s_dyn_libwebp.WebPDecodeRGBAInto(data.data(), data.size(), image->GetPixels(), image->GetStorageSize(),
+                                        image->GetPitch()))
   {
     Error::SetStringView(error, "WebPDecodeRGBAInto() failed");
     image->Invalidate();
@@ -1550,10 +1748,13 @@ bool WebPBufferLoader(Image* image, std::span<const u8> data, Error* error)
 
 bool WebPBufferSaver(const Image& image, DynamicHeapArray<u8>* data, u8 quality, Error* error)
 {
+  if (!s_dyn_libwebp.Open(error))
+    return false;
+
   u8* encoded_data;
   const size_t encoded_size =
-    WebPEncodeRGBA(reinterpret_cast<const u8*>(image.GetPixels()), image.GetWidth(), image.GetHeight(),
-                   image.GetPitch(), static_cast<float>(quality), &encoded_data);
+    s_dyn_libwebp.WebPEncodeRGBA(reinterpret_cast<const u8*>(image.GetPixels()), image.GetWidth(), image.GetHeight(),
+                                 image.GetPitch(), static_cast<float>(quality), &encoded_data);
   if (encoded_size == 0)
   {
     Error::SetStringFmt(error, "WebPEncodeRGBA() for {}x{} failed.", image.GetWidth(), image.GetHeight());
@@ -1562,7 +1763,7 @@ bool WebPBufferSaver(const Image& image, DynamicHeapArray<u8>* data, u8 quality,
 
   data->resize(encoded_size);
   std::memcpy(data->data(), encoded_data, encoded_size);
-  WebPFree(encoded_data);
+  s_dyn_libwebp.WebPFree(encoded_data);
   return true;
 }
 
