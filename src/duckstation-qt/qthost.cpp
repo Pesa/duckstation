@@ -148,6 +148,7 @@ static bool ParseCommandLineParametersAndInitializeConfig(QApplication& app,
 static void AdjustQtEnvironmentVariables();
 static bool IsRunningOnWayland();
 static void ApplyWaylandWorkarounds();
+static void WarnAboutLDLibraryPath();
 static bool ParseDesktopFileExecPath(const std::string& desktop_file_path, std::string* out_exec_path);
 static bool CreateDesktopFile(const std::string& app_path, const std::string& desktop_file_path, Error* error);
 static void CheckDesktopFile();
@@ -410,6 +411,38 @@ void QtHost::ApplyWaylandWorkarounds()
     // that setting WA_DontCreateNativeAncestors on the widget would be sufficient, but apparently not.
     QGuiApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings, true);
   }
+}
+
+void QtHost::WarnAboutLDLibraryPath()
+{
+  static constexpr const char* ACK_CONFIG_SECTION = "Main";
+  static constexpr const char* ACK_CONFIG_KEY = "IgnoreLDLibraryPath";
+
+  const char* raw_path = std::getenv("LD_LIBRARY_PATH");
+  const std::string_view path = raw_path ? StringUtil::StripWhitespace(raw_path) : std::string_view();
+  if (path.empty())
+    return;
+
+  WARNING_LOG("LD_LIBRARY_PATH is set to '{}'", path);
+  const bool acknowledged = Core::GetBaseBoolSettingValue(ACK_CONFIG_SECTION, ACK_CONFIG_KEY, false);
+  if (acknowledged)
+    return;
+
+  const std::unique_ptr<QMessageBox> msgbox(QtUtils::NewMessageBox(
+    nullptr, QMessageBox::Warning, u"DuckStation"_s,
+    QCoreApplication::translate(
+      "QtHost",
+      "We have detected that LD_LIBRARY_PATH has been set to the following value:\n\n%1\n\nThis will likely prevent "
+      "DuckStation from working correctly. You should modify your environment to leave LD_LIBRARY_PATH unset.")
+      .arg(QtUtils::StringViewToQStringView(path)),
+    QMessageBox::Ok, QMessageBox::NoButton, false));
+  QCheckBox* const ignore_cb = new QCheckBox(QCoreApplication::translate("QtHost", "Don't show again"), msgbox.get());
+  msgbox->setCheckBox(ignore_cb);
+  msgbox->setWindowIcon(GetAppIcon());
+  msgbox->exec();
+
+  if (ignore_cb->isChecked())
+    Core::SetBaseBoolSettingValue(ACK_CONFIG_SECTION, ACK_CONFIG_KEY, true);
 }
 
 bool QtHost::ParseDesktopFileExecPath(const std::string& desktop_file_path, std::string* out_exec_path)
@@ -3617,6 +3650,11 @@ int main(int argc, char* argv[])
 
   // Set theme before creating any windows.
   UpdateApplicationTheme();
+
+#ifdef __linux__
+  // Overriding LD_LIBRARY_PATH breaks a bunch of shit, since it'll use out-of-date system libraries.
+  WarnAboutLDLibraryPath();
+#endif
 
   // Build warning.
   AutoUpdaterDialog::warnAboutUnofficialBuild();
