@@ -24,7 +24,7 @@ if(APPLE)
   find_library(COCOA_LIBRARY Cocoa REQUIRED)
   target_link_libraries(updater PRIVATE ${COCOA_LIBRARY})
 
-  if(NOT CMAKE_GENERATOR MATCHES "Xcode" AND NOT SKIP_POSTPROCESS_BUNDLE)
+  if(BUILD_MACOS_BUNDLE)
     set_target_properties(updater PROPERTIES OUTPUT_NAME "Updater")
     set_target_properties(updater PROPERTIES
       MACOSX_BUNDLE true

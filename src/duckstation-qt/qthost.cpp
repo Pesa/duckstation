@@ -80,6 +80,7 @@
 #include "common/windows_headers.h"
 #include <objbase.h> // CoInitializeEx
 #elif defined(__APPLE__)
+#include "common/cocoa_tools.h"
 #include <unistd.h>
 #endif
 
@@ -847,16 +848,7 @@ void QtHost::DownloadFile(QWidget* parent, std::string url, std::string path,
 
 bool QtHost::InitializeFoldersAndConfig(Error* error)
 {
-  // Path to the resources directory relative to the application binary.
-// On Windows/Linux, these are in the binary directory.
-// On macOS, this is in the bundle resources directory.
-#ifndef __APPLE__
-  static constexpr const char* RESOURCES_RELATIVE_PATH = "resources";
-#else
-  static constexpr const char* RESOURCES_RELATIVE_PATH = "../Resources";
-#endif
-
-  if (!Core::SetCriticalFolders(RESOURCES_RELATIVE_PATH, error))
+  if (!Core::SetCriticalFolders(error))
     return false;
 
   Error config_error;
@@ -2503,7 +2495,11 @@ void QtHost::UpdateApplicationLanguage(QWidget* dialog_parent)
 #ifndef __APPLE__
   const QString base_dir = QStringLiteral("%1/translations").arg(qApp->applicationDirPath());
 #else
-  const QString base_dir = QStringLiteral("%1/../Resources/translations").arg(qApp->applicationDirPath());
+  QString base_dir;
+  if (const std::optional<std::string> bundle_path = CocoaTools::GetBundlePath(); bundle_path.has_value())
+    base_dir = QString::fromStdString(Path::Combine(bundle_path.value(), "Contents/Resources/translations"));
+  else
+    base_dir = QStringLiteral("%1/translations").arg(qApp->applicationDirPath());
 #endif
 
   // Qt base uses underscores instead of hyphens.

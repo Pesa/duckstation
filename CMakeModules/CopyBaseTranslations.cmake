@@ -46,7 +46,7 @@ function(copy_base_translations target)
     endif()
 
     target_sources(${target} PRIVATE ${path})
-    if(APPLE)
+    if(BUILD_MACOS_BUNDLE)
       set_source_files_properties(${path} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/translations)
     else()
       add_custom_command(TARGET ${target} POST_BUILD

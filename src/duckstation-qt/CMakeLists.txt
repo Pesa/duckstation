@@ -248,43 +248,46 @@ if(APPLE)
   target_link_libraries(duckstation-qt PRIVATE ${COREGRAPHICS_LIBRARY})
 
   # Don't generate a bundle for XCode, it makes code signing fail...
-  get_scm_version()
-  set(BUNDLE_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DuckStation.app)
-  set_target_properties(duckstation-qt PROPERTIES
-    MACOSX_BUNDLE true
-    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
-    OUTPUT_NAME DuckStation
-  )
+  if(NOT CMAKE_GENERATOR MATCHES "Xcode" AND BUILD_MACOS_BUNDLE)
+    get_scm_version()
+    set(BUNDLE_PATH ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/DuckStation.app)
+    set_target_properties(duckstation-qt PROPERTIES
+      MACOSX_BUNDLE true
+      MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
+      OUTPUT_NAME DuckStation
+    )
 
-  if(CMAKE_GENERATOR MATCHES "Xcode")
+    # Copy icon into the bundle
+    target_sources(duckstation-qt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/DuckStation.icns")
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/DuckStation.icns" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+
+    if(NOT SKIP_POSTPROCESS_BUNDLE)
+      # Inject Qt Libraries into bundle.
+      find_program(MACDEPLOYQT_EXE macdeployqt HINTS "${QT_BINARY_DIRECTORY}")
+      add_custom_target(duckstation-postprocess-bundle ALL
+        COMMAND "${MACDEPLOYQT_EXE}" "${BUNDLE_PATH}" -no-strip
+      )
+      add_dependencies(duckstation-postprocess-bundle duckstation-qt)
+    endif()
+  elseif(CMAKE_GENERATOR MATCHES "Xcode")
     set_target_properties(duckstation-qt PROPERTIES
       XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY ""
       XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED NO
       XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED NO
     )
-  elseif(NOT SKIP_POSTPROCESS_BUNDLE)
-    # Inject Qt Libraries into bundle.
-    find_program(MACDEPLOYQT_EXE macdeployqt HINTS "${QT_BINARY_DIRECTORY}")
-    add_custom_target(duckstation-postprocess-bundle ALL
-      COMMAND "${MACDEPLOYQT_EXE}" "${BUNDLE_PATH}" -no-strip
-    )
-    add_dependencies(duckstation-postprocess-bundle duckstation-qt)
   endif()
-
-  # Copy icon into the bundle
-  target_sources(duckstation-qt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/DuckStation.icns")
-  set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/DuckStation.icns" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
 # Compile qrc to a binary file.
-if(NOT APPLE)
-  set(RCC_FILE "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources/duckstation-qt.rcc")
-  qt_add_binary_resources(duckstation-qt-rcc resources/duckstation-qt.qrc DESTINATION ${RCC_FILE} OPTIONS -no-compress)
+if(NOT BUILD_MACOS_BUNDLE)
+  set(RCC_FILENAME "duckstation-qt.rcc")
+  set(RCC_BUILD_PATH "${CMAKE_CURRENT_BINARY_DIR}/${RCC_FILENAME}")
+  set(RCC_OUTPUT_DIR "$<TARGET_FILE_DIR:duckstation-qt>/resources")
+  qt_add_binary_resources(duckstation-qt-rcc resources/duckstation-qt.qrc DESTINATION ${RCC_BUILD_PATH} OPTIONS -no-compress)
   add_dependencies(duckstation-qt duckstation-qt-rcc)
 
-  # Need to ensure the resources directory exists, it might not. Happens when low CPU count and parallel builds.
-  add_custom_target(duckstation-qt-rcc-mkdir COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources")
-  add_dependencies(duckstation-qt-rcc duckstation-qt-rcc-mkdir)
+  add_custom_command(TARGET duckstation-qt POST_BUILD COMMAND "${CMAKE_COMMAND}" -E make_directory "${RCC_OUTPUT_DIR}")
+  add_custom_command(TARGET duckstation-qt POST_BUILD COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${RCC_BUILD_PATH}" "${RCC_OUTPUT_DIR}/${RCC_FILENAME}")
 else()
   set(RCC_FILE "${CMAKE_CURRENT_BINARY_DIR}/duckstation-qt.rcc")
   qt_add_binary_resources(duckstation-qt-rcc resources/duckstation-qt.qrc DESTINATION ${RCC_FILE} OPTIONS -no-compress)
@@ -296,7 +299,7 @@ endif()
 
 # Translation setup.
 qt_add_lrelease(duckstation-qt TS_FILES ${TS_FILES} QM_FILES_OUTPUT_VARIABLE QM_FILES)
-if(NOT APPLE)
+if(NOT BUILD_MACOS_BUNDLE)
   set(QM_OUTPUT_DIR "$<TARGET_FILE_DIR:duckstation-qt>/translations")
   add_custom_command(TARGET duckstation-qt POST_BUILD COMMAND "${CMAKE_COMMAND}" -E make_directory "${QM_OUTPUT_DIR}")
   foreach (QM_FILE IN LISTS QM_FILES)

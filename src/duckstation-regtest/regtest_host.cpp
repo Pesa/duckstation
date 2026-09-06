@@ -82,7 +82,7 @@ static std::string s_dump_base_directory;
 
 bool RegTestHost::InitializeFoldersAndConfig(Error* error)
 {
-  if (!Core::SetCriticalFolders("resources", error))
+  if (!Core::SetCriticalFolders(error))
     return false;
 
   if (!Core::InitializeBaseSettingsLayer({}, error))

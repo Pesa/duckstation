@@ -268,27 +268,29 @@ function(add_util_resources target)
     get_property(UTIL_METAL_SOURCES GLOBAL PROPERTY UTIL_METAL_SOURCES)
     add_metal_sources(${target} ${UTIL_METAL_SOURCES} metal_shaders macos-metal2.3)
 
-    # Copy MoltenVK into the bundle
-    unset(MOLTENVK_PATH CACHE)
-    find_file(MOLTENVK_PATH NAMES
-      libMoltenVK.dylib
-      lib/libMoltenVK.dylib
-    )
-    if (MOLTENVK_PATH)
-      target_sources(${target} PRIVATE "${MOLTENVK_PATH}")
-      set_source_files_properties("${MOLTENVK_PATH}" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks)
-      message(STATUS "Using MoltenVK from ${MOLTENVK_PATH}")
-    else()
-      message(WARNING "MoltenVK not found in path, it will depend on the target system having it.")
-    endif()
+    if(BUILD_MACOS_BUNDLE)
+      # Copy MoltenVK into the bundle
+      unset(MOLTENVK_PATH CACHE)
+      find_file(MOLTENVK_PATH NAMES
+        libMoltenVK.dylib
+        lib/libMoltenVK.dylib
+      )
+      if (MOLTENVK_PATH)
+        target_sources(${target} PRIVATE "${MOLTENVK_PATH}")
+        set_source_files_properties("${MOLTENVK_PATH}" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks)
+        message(STATUS "Using MoltenVK from ${MOLTENVK_PATH}")
+      else()
+        message(WARNING "MoltenVK not found in path, it will depend on the target system having it.")
+      endif()
 
-    # Copy ffmpeg into the bundle.
-    foreach(component avcodec avformat avutil swresample swscale)
-      string(REGEX REPLACE "\([0-9]+\)\.[0-9]+\.[0-9]+" "\\1" major "${FFMPEG_${component}_VERSION}")
-      string(REPLACE "lib${component}.dylib" "lib${component}.${major}.dylib" version_lib "${FFMPEG_${component}_LIBRARIES}")
-      target_sources(${target} PRIVATE ${version_lib})
-      set_source_files_properties(${target} PRIVATE ${version_lib} PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks)
-    endforeach()
+      # Copy ffmpeg into the bundle.
+      foreach(component avcodec avformat avutil swresample swscale)
+        string(REGEX REPLACE "\([0-9]+\)\.[0-9]+\.[0-9]+" "\\1" major "${FFMPEG_${component}_VERSION}")
+        string(REPLACE "lib${component}.dylib" "lib${component}.${major}.dylib" version_lib "${FFMPEG_${component}_LIBRARIES}")
+        target_sources(${target} PRIVATE ${version_lib})
+        set_source_files_properties(${target} PRIVATE ${version_lib} PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks)
+      endforeach()
+    endif()
   endif()
 
   # Copy dynamically-loaded libraries into the bundle.

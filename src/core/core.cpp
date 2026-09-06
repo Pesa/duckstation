@@ -47,6 +47,8 @@
 #ifdef _WIN32
 #include "common/windows_headers.h"
 #include <ShlObj.h>
+#elifdef __APPLE__
+#include "common/cocoa_tools.h"
 #endif
 
 LOG_CHANNEL(Core);
@@ -56,7 +58,7 @@ namespace Core {
 /// Use two async worker threads, should be enough for most tasks.
 static constexpr u32 NUM_ASYNC_WORKER_THREADS = 2;
 
-static bool SetAppRootAndResources(const char* resources_subdir, Error* error);
+static bool SetAppRootAndResources(Error* error);
 static bool SetDataRoot(Error* error);
 static void SetDefaultSettings(SettingsInterface& si, bool host, bool system, bool controller, bool ignore_user_prefs);
 
@@ -82,9 +84,9 @@ ALIGN_TO_CACHE_LINE static CoreLocals s_locals;
 
 } // namespace Core
 
-bool Core::SetCriticalFolders(const char* resources_subdir, Error* error)
+bool Core::SetCriticalFolders(Error* error)
 {
-  if (!SetAppRootAndResources(resources_subdir, error))
+  if (!SetAppRootAndResources(error))
     return false;
 
   if (!SetDataRoot(error))
@@ -101,7 +103,7 @@ bool Core::SetCriticalFolders(const char* resources_subdir, Error* error)
   return true;
 }
 
-bool Core::SetAppRootAndResources(const char* resources_subdir, Error* error)
+bool Core::SetAppRootAndResources(Error* error)
 {
   const std::string program_path = FileSystem::GetProgramPath(error);
   if (program_path.empty())
@@ -111,10 +113,15 @@ bool Core::SetAppRootAndResources(const char* resources_subdir, Error* error)
 
   EmuFolders::AppRoot = Path::Canonicalize(Path::GetDirectory(program_path));
 
-  // MacOS resources are inside the app bundle, so canonicalize them.
-  EmuFolders::Resources = Path::Combine(EmuFolders::AppRoot, resources_subdir);
 #ifdef __APPLE__
-  EmuFolders::Resources = Path::Canonicalize(EmuFolders::Resources);
+  // MacOS resources are inside the app bundle. We might not be running in a bundle.
+  const std::optional<std::string> bundle_path = CocoaTools::GetBundlePath();
+  if (bundle_path.has_value())
+    EmuFolders::Resources = Path::Combine(bundle_path.value(), "Contents/Resources");
+  else
+    EmuFolders::Resources = Path::Combine(EmuFolders::AppRoot, "resources");
+#else
+  EmuFolders::Resources = Path::Combine(EmuFolders::AppRoot, "resources");
 #endif
 
   if (!FileSystem::DirectoryExists(EmuFolders::Resources.c_str()))

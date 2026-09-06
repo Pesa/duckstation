@@ -10,7 +10,7 @@ class Error;
 namespace Core {
 
 /// Based on the current configuration, determines what the data directory is.
-bool SetCriticalFolders(const char* resources_subdir, Error* error);
+bool SetCriticalFolders(Error* error);
 
 /// Returns the path to the configuration file.
 /// We split this out so it can be retrieved by the host for error message purposes,

@@ -314,17 +314,28 @@ if(APPLE)
       )
     endforeach()
 
-    set(metallib_file ${CMAKE_CURRENT_BINARY_DIR}/${library_name}.metallib)
+    set(metallib_filename "${library_name}.metallib")
+    set(metallib_path "${CMAKE_CURRENT_BINARY_DIR}/${metallib_filename}")
 
     add_custom_command(
-      OUTPUT ${metallib_file}
-      COMMAND xcrun metallib -o ${metallib_file} ${air_files}
+      OUTPUT ${metallib_path}
+      COMMAND xcrun metallib -o ${metallib_path} ${air_files}
       DEPENDS ${air_files}
-      COMMENT "Linking Metal library ${library_name}.metallib"
+      COMMENT "Linking Metal library ${metallib_filename}"
     )
 
-    target_sources(${target} PRIVATE ${metallib_file})
-    set_source_files_properties(${metallib_file} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(${target} PRIVATE ${metallib_path})
+    if(BUILD_MACOS_BUNDLE)
+      set_source_files_properties(${metallib_path} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    else()
+      set(RESOURCES_DIRECTORY "$<TARGET_FILE_DIR:${target}>/resources")
+      add_custom_command(TARGET duckstation-qt POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${RESOURCES_DIRECTORY}"
+      )
+      add_custom_command(TARGET duckstation-qt POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${metallib_path}" "${RESOURCES_DIRECTORY}/${metallib_filename}"
+      )
+    endif()
   endfunction()
 endif()
 
@@ -344,7 +355,7 @@ function(add_resources TARGET DEST_SUBDIR SOURCE_DIR)
     # Get the subdirectory portion (if any)
     get_filename_component(REL_SUBDIR "${REL_PATH}" DIRECTORY)
 
-    if(APPLE)
+    if(BUILD_MACOS_BUNDLE)
       # On macOS, add as source with MACOSX_PACKAGE_LOCATION
       target_sources(${TARGET} PRIVATE "${SOURCE_FILE}")
       if(REL_SUBDIR)
@@ -391,7 +402,7 @@ function(add_runtime_libraries TARGET)
 
     get_filename_component(dyn_lib_dir "${dyn_lib_path}" DIRECTORY)
 
-    if(APPLE AND NOT CMAKE_GENERATOR STREQUAL "Xcode" AND NOT SKIP_POSTPROCESS_BUNDLE)
+    if(BUILD_MACOS_BUNDLE)
       # For normal macOS bundle generators, put the dylib into Contents/Frameworks.
       message(STATUS "Bundling imported library ${dyn_lib_soname}")
       target_sources(${TARGET} PRIVATE "${dyn_lib_path}")

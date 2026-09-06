@@ -16,7 +16,13 @@ if(LINUX OR BSD)
   option(ENABLE_WAYLAND "Support Wayland window system" ON)
 endif()
 if(APPLE)
+  option(BUILD_MACOS_BUNDLE "Build MacOS application bundles" OFF)
   option(SKIP_POSTPROCESS_BUNDLE "Disable bundle post-processing, including Qt additions" OFF)
+
+  # Cannot have a Xcode and bundle build for now due to code signing.
+  if(CMAKE_GENERATOR MATCHES "Xcode" AND BUILD_MACOS_BUNDLE)
+    message(FATAL_ERROR "Cannot build bundles when using the Xcode generator")
+  endif()
 endif()
 
 # Set _DEBUG macro for Debug builds.
