@@ -43,7 +43,7 @@ bool DynSqlite::Open(Error* error)
   std::call_once(s_locals.sqlite_init_flag, [&error]() {
     Error lerror;
     DynamicLibrary lib;
-    if (!lib.Open(DynamicLibrary::GetBundledLibraryPath("sqlite3", lib_major_version).c_str(), &lerror))
+    if (!lib.Open(DynamicLibrary::GetVersionedFilename("sqlite3", lib_major_version).c_str(), &lerror))
     {
       ERROR_LOG("Failed to load sqlite: {}", lerror.GetDescription());
       Error::SetStringFmt(error, "Failed to load sqlite: {}", lerror.GetDescription());

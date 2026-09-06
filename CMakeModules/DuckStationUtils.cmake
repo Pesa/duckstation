@@ -370,10 +370,11 @@ function(add_resources TARGET DEST_SUBDIR SOURCE_DIR)
   endforeach()
 endfunction()
 
-function(bundle_libraries TARGET)
+function(add_runtime_libraries TARGET)
   unset(LIBRARY_SOURCES)
+  unset(LIBRARY_RPATHS)
   foreach(NAME IN LISTS ARGN)
-    get_target_property(dyn_lib_path ${NAME} IMPORTED_LOCATION_RELEASE)
+    get_target_property(dyn_lib_path   ${NAME} IMPORTED_LOCATION_RELEASE)
     get_target_property(dyn_lib_soname ${NAME} IMPORTED_SONAME_RELEASE)
     if(dyn_lib_soname)
       string(REPLACE "@rpath/" "" dyn_lib_soname_filename "${dyn_lib_soname}")
@@ -388,19 +389,35 @@ function(bundle_libraries TARGET)
       message(FATAL_ERROR "Could not find ${NAME}.")
     endif()
 
-    message(STATUS "Bundling imported library ${dyn_lib_soname}")
+    get_filename_component(dyn_lib_dir "${dyn_lib_path}" DIRECTORY)
 
-    if(APPLE)
-      target_sources(${target} PRIVATE "${dyn_lib_path}")
-      set_source_files_properties("${dyn_lib_path}" PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks)
+    if(APPLE AND NOT CMAKE_GENERATOR STREQUAL "Xcode" AND NOT SKIP_POSTPROCESS_BUNDLE)
+      # For normal macOS bundle generators, put the dylib into Contents/Frameworks.
+      message(STATUS "Bundling imported library ${dyn_lib_soname}")
+      target_sources(${TARGET} PRIVATE "${dyn_lib_path}")
+      set_source_files_properties(
+        "${dyn_lib_path}"
+        PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks
+      )
     else()
-      list(APPEND LIBRARY_SOURCES "${dyn_lib_path}")
+      # Linux, and macOS when using the Xcode generator/not using bundles.
+      list(APPEND LIBRARY_RPATHS "${dyn_lib_dir}")
     endif()
   endforeach()
 
-  if(NOT APPLE)
-    add_custom_command(TARGET ${TARGET} POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIBRARY_SOURCES} "$<TARGET_FILE_DIR:${TARGET}>"
+  # Add the required library directories to the target's existing
+  # build RPATH, without adding duplicate entries.
+  if(LIBRARY_RPATHS)
+    get_target_property(existing_rpath ${TARGET} BUILD_RPATH)
+    if(NOT existing_rpath)
+      set(existing_rpath "")
+    endif()
+
+    list(APPEND existing_rpath ${LIBRARY_RPATHS})
+    list(REMOVE_DUPLICATES existing_rpath)
+    set_target_properties(
+      ${TARGET}
+      PROPERTIES BUILD_RPATH "${existing_rpath}"
     )
   endif()
 endfunction()

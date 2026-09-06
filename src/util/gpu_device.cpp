@@ -1403,7 +1403,7 @@ bool DynShaderc::Open(Error* error)
   std::call_once(s_locals.shaderc_init_flag, [&error]() {
     Error lerror;
     DynamicLibrary lib;
-    if (!lib.Open(DynamicLibrary::GetBundledLibraryPath("shaderc_shared").c_str(), error))
+    if (!lib.Open(DynamicLibrary::GetVersionedFilename("shaderc_shared").c_str(), error))
     {
       ERROR_LOG("Failed to load shaderc: {}", (error ? error : &lerror)->GetDescription());
       Error::AddPrefix(error, "Failed to load shaderc: ");
@@ -1444,9 +1444,9 @@ bool DynSpirvCross::Open(Error* error)
     DynamicLibrary lib;
 #if defined(_WIN32) || defined(__ANDROID__)
     // SPVC's build on Windows doesn't spit out a versioned DLL.
-    const std::string libpath = DynamicLibrary::GetBundledLibraryPath("spirv-cross-c-shared");
+    const std::string libpath = DynamicLibrary::GetVersionedFilename("spirv-cross-c-shared");
 #else
-    const std::string libpath = DynamicLibrary::GetBundledLibraryPath("spirv-cross-c-shared", SPVC_C_API_VERSION_MAJOR);
+    const std::string libpath = DynamicLibrary::GetVersionedFilename("spirv-cross-c-shared", SPVC_C_API_VERSION_MAJOR);
 #endif
     if (!lib.Open(libpath.c_str(), error ? error : &lerror))
     {

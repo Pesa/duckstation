@@ -33,15 +33,28 @@ APPDIRNAME=DuckStation.AppDir
 STRIP=strip
 
 declare -a MANUAL_LIBS=(
+	"libharfbuzz.so"
+	"libfreetype.so.6"
+	"libjpeg.so.62"
+	"libpng16.so.16"
+	"libsharpyuv.so.0"
+	"libwebpdecoder.so.3"
+	"libwebpdemux.so.2"
+	"libwebpmux.so.3"
+	"libwebp.so.7"
 	"libz.so.1"
+
+	"libdiscord-rpc.so"
+	"libshaderc_shared.so"
+	"libspirv-cross-c-shared.so.0"
+	"libsqlite3.so.3"
+
 	"libavcodec.so.63"
 	"libavformat.so.63"
 	"libavutil.so.61"
 	"libswscale.so.10"
 	"libswresample.so.7"
 	"libopenh264.so.8"
-	"libharfbuzz.so"
-	"libfreetype.so.6"
 )
 
 set -e
@@ -117,7 +130,6 @@ $LINUXDEPLOY --plugin qt --appdir="$OUTDIR" --executable="$BUILDDIR/bin/duckstat
 
 echo "Copying resources into AppDir..."
 cp -a "$BUILDDIR/bin/resources" "$OUTDIR/usr/bin"
-cp "$BUILDDIR/bin/"*.so* "$OUTDIR/usr/bin"
 
 # Restore unstripped deps (for cache).
 rm -fr "$DEPSDIR"

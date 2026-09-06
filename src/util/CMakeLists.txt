@@ -280,10 +280,10 @@ function(add_util_resources target)
   endif()
 
   # Copy dynamically-loaded libraries into the bundle.
-  bundle_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared
-                   libjpeg-turbo::jpeg PNG::png_shared WebP::webp WebP::sharpyuv WebP::webpdecoder
-                   WebP::webpdemux WebP::libwebpmux)
+  add_runtime_libraries(${target} spirv-cross-c-shared Shaderc::shaderc_shared SQLite3::sqlite3-shared
+                        libjpeg-turbo::jpeg PNG::png_shared WebP::webp WebP::sharpyuv WebP::webpdecoder
+                        WebP::webpdemux WebP::libwebpmux)
   if(APPLE)
-    bundle_libraries(${target} harfbuzz::harfbuzz)
+    add_runtime_libraries(${target} harfbuzz::harfbuzz)
   endif()
 endfunction()

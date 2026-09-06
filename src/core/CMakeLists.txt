@@ -226,5 +226,5 @@ function(add_core_resources target)
   add_resources(${target} "resources" ${CMAKE_SOURCE_DIR}/data/resources)
 
   # Copy dynamically-loaded libraries into the bundle.
-  bundle_libraries(${target} DiscordRPC::discord-rpc)
+  add_runtime_libraries(${target} DiscordRPC::discord-rpc)
 endfunction()

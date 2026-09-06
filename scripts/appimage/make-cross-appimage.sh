@@ -85,6 +85,7 @@ declare -a DEPLIBS=(
 	"libpng16.so.16"
 	"libSDL3.so.0"
 	"libsharpyuv.so.0"
+	"libwebpdecoder.so.3"
 	"libwebpdemux.so.2"
 	"libwebpmux.so.3"
 	"libwebp.so.7"
@@ -97,6 +98,7 @@ declare -a DEPLIBS=(
 	"libshaderc_shared.so"
 	"libsoundtouch.so.2"
 	"libspirv-cross-c-shared.so.0"
+	"libsqlite3.so.3"
 
 	#"libavcodec.so.61"
 	#"libavformat.so.61"
