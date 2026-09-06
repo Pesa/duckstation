@@ -19,6 +19,8 @@
 #include <dlfcn.h>
 #ifdef __APPLE__
 #include "common/cocoa_tools.h"
+#elif defined(__linux__) && !defined(__ANDROID__)
+#include <link.h>
 #endif
 #endif
 
@@ -128,6 +130,12 @@ bool DynamicLibrary::Open(const char* filename, Error* error)
     Error::SetStringFmt(error, "Loading {} failed: {}", filename, err ? err : "<UNKNOWN>");
     return false;
   }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+  struct link_map* map;
+  if (dlinfo(m_handle, RTLD_DI_LINKMAP, &map) == 0)
+    DEV_LOG("{} loaded as {}", filename, map->l_name);
+#endif
 
   return true;
 #endif
