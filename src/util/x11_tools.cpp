@@ -12,12 +12,9 @@
 #include <xcb/xcb.h>
 
 #include <memory>
+#include <mutex>
 
 LOG_CHANNEL(WindowInfo);
-
-namespace {
-
-namespace dyn_libs {
 
 #define XCB_FUNCTIONS(X)                                                                                               \
   X(xcb_get_geometry)                                                                                                  \
@@ -39,19 +36,7 @@ namespace dyn_libs {
   X(xcb_free_colormap_checked)                                                                                         \
   X(xcb_configure_window_checked)
 
-static bool OpenXcb(Error* error);
-static void CloseXcb();
-static void CloseAll();
-
-static DynamicLibrary s_xcb_library;
-static DynamicLibrary s_x11xcb_library;
-static bool s_close_registered = false;
-
-#define ADD_FUNC(F) static decltype(&::F) F;
-XCB_FUNCTIONS(ADD_FUNC);
-#undef ADD_FUNC
-
-} // namespace dyn_libs
+namespace {
 
 template<typename T>
 struct XCBPointerDeleter
@@ -62,52 +47,45 @@ struct XCBPointerDeleter
 template<typename T>
 using XCBPointer = std::unique_ptr<T, XCBPointerDeleter<T>>;
 
+struct Locals
+{
+  DynamicLibrary xcb_library;
+  std::once_flag xcb_once_flag;
+
+#define ADD_FUNC(F) decltype(&::F) F;
+  XCB_FUNCTIONS(ADD_FUNC)
+#undef ADD_FUNC
+};
+
 } // namespace
 
-bool dyn_libs::OpenXcb(Error* error)
+static bool OpenXcb(Error* error);
+
+static Locals s_locals;
+
+bool OpenXcb(Error* error)
 {
-  if (s_xcb_library.IsOpen())
+  if (s_locals.xcb_library.IsOpen())
     return true;
 
-  const std::string libname = DynamicLibrary::GetVersionedFilename("xcb", 1);
-  if (!s_xcb_library.Open(libname.c_str(), error))
-  {
-    Error::AddPrefix(error, "Failed to load xcb: ");
-    return false;
-  }
+  std::call_once(s_locals.xcb_once_flag, [error]() {
+    if (!s_locals.xcb_library.Open(DynamicLibrary::GetVersionedFilename("xcb", 1).c_str(), error))
+    {
+      Error::AddPrefix(error, "Failed to load xcb: ");
+      return;
+    }
 
-#define LOAD_FUNC(F)                                                                                                   \
-  if (!s_xcb_library.GetSymbol(#F, &F))                                                                                \
-  {                                                                                                                    \
-    Error::SetStringFmt(error, "Failed to find function {}", #F);                                                      \
-    CloseXcb();                                                                                                        \
-    return false;                                                                                                      \
-  }
+    static const DynamicLibrary::SymbolTable symbols[] = {
+#define SYMBOL_ENTRY(F) {#F, reinterpret_cast<void**>(&s_locals.F)},
+      XCB_FUNCTIONS(SYMBOL_ENTRY)
+#undef SYMBOL_ENTRY
+    };
 
-  XCB_FUNCTIONS(LOAD_FUNC)
-#undef LOAD_FUNC
+    if (!s_locals.xcb_library.ResolveSymbols(symbols, error))
+      DynamicLibrary::ClearSymbols(symbols);
+  });
 
-  if (!s_close_registered)
-  {
-    s_close_registered = true;
-    std::atexit(&dyn_libs::CloseAll);
-  }
-
-  return true;
-}
-
-void dyn_libs::CloseXcb()
-{
-#define UNLOAD_FUNC(F) F = nullptr;
-  XCB_FUNCTIONS(UNLOAD_FUNC)
-#undef UNLOAD_FUNC
-
-  s_xcb_library.Close();
-}
-
-void dyn_libs::CloseAll()
-{
-  CloseXcb();
+  return s_locals.xcb_library.IsOpen();
 }
 
 X11Window::X11Window() = default;
@@ -163,14 +141,14 @@ bool X11Window::Create(xcb_connection_t* connection, xcb_window_t parent_window,
 {
   xcb_generic_error_t* xerror;
 
-  if (!dyn_libs::OpenXcb(error))
+  if (!OpenXcb(error))
     return false;
 
   m_connection = connection;
   m_parent_window = parent_window;
 
   XCBPointer<xcb_get_geometry_reply_t> gwa(
-    dyn_libs::xcb_get_geometry_reply(connection, dyn_libs::xcb_get_geometry(connection, parent_window), &xerror));
+    s_locals.xcb_get_geometry_reply(connection, s_locals.xcb_get_geometry(connection, parent_window), &xerror));
   if (!gwa)
   {
     SetErrorObject(error, "xcb_get_geometry_reply() failed: ", xerror);
@@ -182,16 +160,16 @@ bool X11Window::Create(xcb_connection_t* connection, xcb_window_t parent_window,
 
   // Need to find the root window to get an appropriate depth. Needed for NVIDIA+XWayland.
   int visual_depth = XCB_COPY_FROM_PARENT;
-  for (xcb_screen_iterator_t it = dyn_libs::xcb_setup_roots_iterator(dyn_libs::xcb_get_setup(connection)); it.rem != 0;
-       dyn_libs::xcb_screen_next(&it))
+  for (xcb_screen_iterator_t it = s_locals.xcb_setup_roots_iterator(s_locals.xcb_get_setup(connection)); it.rem != 0;
+       s_locals.xcb_screen_next(&it))
   {
     if (it.data->root == gwa->root)
     {
-      for (xcb_depth_iterator_t dit = dyn_libs::xcb_screen_allowed_depths_iterator(it.data); dit.rem != 0;
-           dyn_libs::xcb_depth_next(&dit))
+      for (xcb_depth_iterator_t dit = s_locals.xcb_screen_allowed_depths_iterator(it.data); dit.rem != 0;
+           s_locals.xcb_depth_next(&dit))
       {
-        const int len = dyn_libs::xcb_depth_visuals_length(dit.data);
-        const xcb_visualtype_t* visuals = dyn_libs::xcb_depth_visuals(dit.data);
+        const int len = s_locals.xcb_depth_visuals_length(dit.data);
+        const xcb_visualtype_t* visuals = s_locals.xcb_depth_visuals(dit.data);
         int idx = 0;
         for (; idx < len; idx++)
         {
@@ -210,24 +188,24 @@ bool X11Window::Create(xcb_connection_t* connection, xcb_window_t parent_window,
     WARNING_LOG("Could not find visual's depth.");
 
   // ID isn't "used" until the call succeeds.
-  m_colormap = dyn_libs::xcb_generate_id(connection);
-  if ((xerror = dyn_libs::xcb_request_check(
+  m_colormap = s_locals.xcb_generate_id(connection);
+  if ((xerror = s_locals.xcb_request_check(
          connection,
-         dyn_libs::xcb_create_colormap_checked(connection, XCB_COLORMAP_ALLOC_NONE, m_colormap, parent_window, vi))))
+         s_locals.xcb_create_colormap_checked(connection, XCB_COLORMAP_ALLOC_NONE, m_colormap, parent_window, vi))))
   {
     SetErrorObject(error, "xcb_create_colormap_checked() failed: ", xerror);
     m_colormap = {};
     return false;
   }
 
-  m_window = dyn_libs::xcb_generate_id(connection);
+  m_window = s_locals.xcb_generate_id(connection);
 
   const u32 window_values[] = {XCB_PIXMAP_NONE, 0u, m_colormap};
-  xerror = dyn_libs::xcb_request_check(
+  xerror = s_locals.xcb_request_check(
     connection,
-    dyn_libs::xcb_create_window_checked(connection, visual_depth, m_window, parent_window, 0, 0, m_width, m_height, 0,
-                                        XCB_WINDOW_CLASS_INPUT_OUTPUT, vi,
-                                        XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, window_values));
+    s_locals.xcb_create_window_checked(connection, visual_depth, m_window, parent_window, 0, 0, m_width, m_height, 0,
+                                       XCB_WINDOW_CLASS_INPUT_OUTPUT, vi,
+                                       XCB_CW_BACK_PIXMAP | XCB_CW_BORDER_PIXEL | XCB_CW_COLORMAP, window_values));
   if (xerror)
   {
     SetErrorObject(error, "xcb_create_window_checked() failed: ", xerror);
@@ -235,7 +213,7 @@ bool X11Window::Create(xcb_connection_t* connection, xcb_window_t parent_window,
     return false;
   }
 
-  xerror = dyn_libs::xcb_request_check(connection, dyn_libs::xcb_map_window_checked(connection, m_window));
+  xerror = s_locals.xcb_request_check(connection, s_locals.xcb_map_window_checked(connection, m_window));
   if (xerror)
   {
     SetErrorObject(error, "xcb_map_window_checked() failed: ", xerror);
@@ -252,15 +230,14 @@ void X11Window::Destroy()
 
   if (m_window)
   {
-    if ((xerror =
-           dyn_libs::xcb_request_check(m_connection, dyn_libs::xcb_unmap_window_checked(m_connection, m_window))))
+    if ((xerror = s_locals.xcb_request_check(m_connection, s_locals.xcb_unmap_window_checked(m_connection, m_window))))
     {
       SetErrorObject(&error, "xcb_unmap_window_checked() failed: ", xerror);
       ERROR_LOG(error.GetDescription());
     }
 
     if ((xerror =
-           dyn_libs::xcb_request_check(m_connection, dyn_libs::xcb_destroy_window_checked(m_connection, m_window))))
+           s_locals.xcb_request_check(m_connection, s_locals.xcb_destroy_window_checked(m_connection, m_window))))
     {
       SetErrorObject(&error, "xcb_destroy_window_checked() failed: ", xerror);
       ERROR_LOG(error.GetDescription());
@@ -273,7 +250,7 @@ void X11Window::Destroy()
   if (m_colormap)
   {
     if ((xerror =
-           dyn_libs::xcb_request_check(m_connection, dyn_libs::xcb_free_colormap_checked(m_connection, m_colormap))))
+           s_locals.xcb_request_check(m_connection, s_locals.xcb_free_colormap_checked(m_connection, m_colormap))))
     {
       SetErrorObject(&error, "xcb_free_colormap_checked() failed: ", xerror);
       ERROR_LOG(error.GetDescription());
@@ -295,8 +272,8 @@ void X11Window::Resize(u16 width, u16 height)
   }
   else
   {
-    XCBPointer<xcb_get_geometry_reply_t> gwa(dyn_libs::xcb_get_geometry_reply(
-      m_connection, dyn_libs::xcb_get_geometry(m_connection, m_parent_window), &xerror));
+    XCBPointer<xcb_get_geometry_reply_t> gwa(
+      s_locals.xcb_get_geometry_reply(m_connection, s_locals.xcb_get_geometry(m_connection, m_parent_window), &xerror));
     if (!gwa)
     {
       SetErrorObject(&error, "xcb_get_geometry() failed: ", xerror);
@@ -309,8 +286,8 @@ void X11Window::Resize(u16 width, u16 height)
   }
 
   u32 values[] = {width, height};
-  if ((xerror = dyn_libs::xcb_request_check(
-         m_connection, dyn_libs::xcb_configure_window_checked(
+  if ((xerror = s_locals.xcb_request_check(
+         m_connection, s_locals.xcb_configure_window_checked(
                          m_connection, m_window, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, values))))
   {
     SetErrorObject(&error, "xcb_configure_window_checked() failed: ", xerror);

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: CC-BY-NC-ND-4.0
 
 #include "opengl_context_wgl.h"
-#include "opengl_loader.h"
 #include "gpu_texture.h"
+#include "opengl_loader.h"
 
 #include "common/assert.h"
 #include "common/dynamic_library.h"
@@ -17,8 +17,6 @@ LOG_CHANNEL(GPUDevice);
 #pragma clang diagnostic ignored "-Wmicrosoft-cast"
 #endif
 
-namespace dyn_libs {
-
 #define OPENGL_FUNCTIONS(X)                                                                                            \
   X(wglCreateContext)                                                                                                  \
   X(wglDeleteContext)                                                                                                  \
@@ -28,64 +26,61 @@ namespace dyn_libs {
   X(wglMakeCurrent)                                                                                                    \
   X(wglShareLists)
 
+namespace {
+struct Locals
+{
+  DynamicLibrary opengl_library;
+  std::once_flag opengl_once_flag;
+
+#define DECLARE_OPENGL_FUNCTION(F) decltype(&::F) F;
+  OPENGL_FUNCTIONS(DECLARE_OPENGL_FUNCTION)
+#undef DECLARE_OPENGL_FUNCTION
+};
+} // namespace
+
 static bool LoadOpenGLLibrary(Error* error);
-static void CloseOpenGLLibrary();
 static void* GetProcAddressCallback(const char* name);
 
-static DynamicLibrary s_opengl_library;
+static Locals s_locals;
 
-#define DECLARE_OPENGL_FUNCTION(F) static decltype(&::F) F;
-OPENGL_FUNCTIONS(DECLARE_OPENGL_FUNCTION)
-#undef DECLARE_OPENGL_FUNCTION
-} // namespace dyn_libs
-
-bool dyn_libs::LoadOpenGLLibrary(Error* error)
+bool LoadOpenGLLibrary(Error* error)
 {
-  if (s_opengl_library.IsOpen())
+  if (s_locals.opengl_library.IsOpen())
     return true;
-  else if (!s_opengl_library.Open("opengl32.dll", error))
-    return false;
 
-  bool result = true;
-#define RESOLVE_OPENGL_FUNCTION(F) result = result && s_opengl_library.GetSymbol(#F, &F);
-  OPENGL_FUNCTIONS(RESOLVE_OPENGL_FUNCTION);
-#undef RESOLVE_OPENGL_FUNCTION
+  std::call_once(s_locals.opengl_once_flag, [error]() {
+    if (!s_locals.opengl_library.Open("opengl32.dll", error))
+    {
+      Error::AddPrefix(error, "Failed to load xcb: ");
+      return;
+    }
 
-  if (!result)
-  {
-    CloseOpenGLLibrary();
-    Error::SetStringView(error, "One or more required functions from opengl32.dll is missing.");
-    return false;
-  }
+    static const DynamicLibrary::SymbolTable symbols[] = {
+#define SYMBOL_ENTRY(F) {#F, reinterpret_cast<void**>(&s_locals.F)},
+      OPENGL_FUNCTIONS(SYMBOL_ENTRY)
+#undef SYMBOL_ENTRY
+    };
 
-  std::atexit(&CloseOpenGLLibrary);
-  return true;
+    if (!s_locals.opengl_library.ResolveSymbols(symbols, error))
+      DynamicLibrary::ClearSymbols(symbols);
+  });
+
+  return s_locals.opengl_library.IsOpen();
 }
 
-void dyn_libs::CloseOpenGLLibrary()
+void* GetProcAddressCallback(const char* name)
 {
-#define CLOSE_OPENGL_FUNCTION(F) F = nullptr;
-  OPENGL_FUNCTIONS(CLOSE_OPENGL_FUNCTION);
-#undef CLOSE_OPENGL_FUNCTION
-
-  s_opengl_library.Close();
-}
-
-#undef OPENGL_FUNCTIONS
-
-void* dyn_libs::GetProcAddressCallback(const char* name)
-{
-  void* addr = dyn_libs::wglGetProcAddress(name);
+  void* addr = s_locals.wglGetProcAddress(name);
   if (addr)
     return addr;
 
   // try opengl32.dll
-  return s_opengl_library.GetSymbolAddress(name);
+  return s_locals.opengl_library.GetSymbolAddress(name);
 }
 
 static bool ReloadWGL(HDC dc, Error* error)
 {
-  if (!gladLoadWGL(dc, [](const char* name) { return (GLADapiproc)dyn_libs::wglGetProcAddress(name); }))
+  if (!gladLoadWGL(dc, [](const char* name) { return (GLADapiproc)s_locals.wglGetProcAddress(name); }))
   {
     Error::SetStringView(error, "Loading GLAD WGL functions failed");
     return false;
@@ -100,10 +95,10 @@ OpenGLContextWGL::~OpenGLContextWGL()
 {
   if (m_rc)
   {
-    if (dyn_libs::wglGetCurrentContext() == m_rc)
-      dyn_libs::wglMakeCurrent(nullptr, nullptr);
+    if (s_locals.wglGetCurrentContext() == m_rc)
+      s_locals.wglMakeCurrent(nullptr, nullptr);
 
-    dyn_libs::wglDeleteContext(m_rc);
+    s_locals.wglDeleteContext(m_rc);
   }
 
   if (m_pbuffer)
@@ -119,7 +114,7 @@ std::unique_ptr<OpenGLContext> OpenGLContextWGL::Create(WindowInfo& wi, SurfaceH
                                                         std::span<const Version> versions_to_try, Error* error)
 {
   std::unique_ptr<OpenGLContextWGL> context = std::make_unique<OpenGLContextWGL>();
-  if (!dyn_libs::LoadOpenGLLibrary(error) || !context->Initialize(wi, surface, versions_to_try, error))
+  if (!LoadOpenGLLibrary(error) || !context->Initialize(wi, surface, versions_to_try, error))
     context.reset();
 
   return context;
@@ -159,7 +154,7 @@ bool OpenGLContextWGL::Initialize(WindowInfo& wi, SurfaceHandle* surface, std::s
 
 void* OpenGLContextWGL::GetProcAddress(const char* name)
 {
-  return dyn_libs::GetProcAddressCallback(name);
+  return GetProcAddressCallback(name);
 }
 
 OpenGLContext::SurfaceHandle OpenGLContextWGL::CreateSurface(WindowInfo& wi, Error* error /*= nullptr*/)
@@ -180,7 +175,7 @@ void OpenGLContextWGL::DestroySurface(SurfaceHandle handle)
     return;
 
   // current buffer? switch to pbuffer first
-  if (dyn_libs::wglGetCurrentDC() == static_cast<HDC>(handle))
+  if (s_locals.wglGetCurrentDC() == static_cast<HDC>(handle))
     MakeCurrent(nullptr);
 
   DeleteDC(static_cast<HDC>(handle));
@@ -201,7 +196,7 @@ bool OpenGLContextWGL::SwapBuffers()
 
 bool OpenGLContextWGL::IsCurrent() const
 {
-  return (m_rc && dyn_libs::wglGetCurrentContext() == m_rc);
+  return (m_rc && s_locals.wglGetCurrentContext() == m_rc);
 }
 
 bool OpenGLContextWGL::MakeCurrent(SurfaceHandle surface, Error* error /* = nullptr */)
@@ -212,9 +207,11 @@ bool OpenGLContextWGL::MakeCurrent(SurfaceHandle surface, Error* error /* = null
   else if (m_current_dc == new_dc)
     return true;
 
-  if (!dyn_libs::wglMakeCurrent(new_dc, m_rc))
+  if (!s_locals.wglMakeCurrent(new_dc, m_rc))
   {
-    ERROR_LOG("wglMakeCurrent() failed: {}", GetLastError());
+    const DWORD err = GetLastError();
+    ERROR_LOG("wglMakeCurrent() failed: {}", err);
+    Error::SetWin32(error, "wglMakeCurrent() failed: ", err);
     return false;
   }
 
@@ -224,7 +221,7 @@ bool OpenGLContextWGL::MakeCurrent(SurfaceHandle surface, Error* error /* = null
 
 bool OpenGLContextWGL::DoneCurrent()
 {
-  if (!dyn_libs::wglMakeCurrent(m_current_dc, nullptr))
+  if (!s_locals.wglMakeCurrent(m_current_dc, nullptr))
     return false;
 
   m_current_dc = nullptr;
@@ -388,16 +385,16 @@ HDC OpenGLContextWGL::GetPBufferDC(Error* error)
   ScopedGuard temp_rc_guard([&temp_rc, hdc]() {
     if (temp_rc)
     {
-      dyn_libs::wglMakeCurrent(hdc, nullptr);
-      dyn_libs::wglDeleteContext(temp_rc);
+      s_locals.wglMakeCurrent(hdc, nullptr);
+      s_locals.wglDeleteContext(temp_rc);
     }
   });
 
   if (!GLAD_WGL_ARB_pbuffer)
   {
     // we're probably running completely surfaceless... need a temporary context.
-    temp_rc = dyn_libs::wglCreateContext(hdc);
-    if (!temp_rc || !dyn_libs::wglMakeCurrent(hdc, temp_rc))
+    temp_rc = s_locals.wglCreateContext(hdc);
+    if (!temp_rc || !s_locals.wglMakeCurrent(hdc, temp_rc))
     {
       Error::SetStringView(error, "Failed to create temporary context to load WGL for pbuffer.");
       return NULL;
@@ -444,7 +441,7 @@ HDC OpenGLContextWGL::GetPBufferDC(Error* error)
 
 bool OpenGLContextWGL::CreateAnyContext(HDC hdc, HGLRC share_context, bool make_current, Error* error)
 {
-  m_rc = dyn_libs::wglCreateContext(hdc);
+  m_rc = s_locals.wglCreateContext(hdc);
   if (!m_rc)
   {
     Error::SetWin32(error, "wglCreateContext() failed: ", GetLastError());
@@ -453,7 +450,7 @@ bool OpenGLContextWGL::CreateAnyContext(HDC hdc, HGLRC share_context, bool make_
 
   if (make_current)
   {
-    if (!dyn_libs::wglMakeCurrent(hdc, m_rc))
+    if (!s_locals.wglMakeCurrent(hdc, m_rc))
     {
       Error::SetWin32(error, "wglMakeCurrent() failed: ", GetLastError());
       return false;
@@ -469,7 +466,7 @@ bool OpenGLContextWGL::CreateAnyContext(HDC hdc, HGLRC share_context, bool make_
     }
   }
 
-  if (share_context && !dyn_libs::wglShareLists(share_context, m_rc))
+  if (share_context && !s_locals.wglShareLists(share_context, m_rc))
   {
     Error::SetWin32(error, "wglShareLists() failed: ", GetLastError());
     return false;
@@ -542,10 +539,10 @@ bool OpenGLContextWGL::CreateVersionContext(const Version& version, HDC hdc, HGL
   // destroy and swap contexts
   if (m_rc)
   {
-    if (!dyn_libs::wglMakeCurrent(hdc, make_current ? new_rc : nullptr))
+    if (!s_locals.wglMakeCurrent(hdc, make_current ? new_rc : nullptr))
     {
       Error::SetWin32(error, "wglMakeCurrent() failed: ", GetLastError());
-      dyn_libs::wglDeleteContext(new_rc);
+      s_locals.wglDeleteContext(new_rc);
       return false;
     }
 
@@ -555,7 +552,7 @@ bool OpenGLContextWGL::CreateVersionContext(const Version& version, HDC hdc, HGL
     if (make_current && !ReloadWGL(hdc, error))
       return false;
 
-    dyn_libs::wglDeleteContext(m_rc);
+    s_locals.wglDeleteContext(m_rc);
   }
 
   m_rc = new_rc;
