@@ -87,6 +87,8 @@
     <ClInclude Include="sqlite_helpers.h" />
     <ClInclude Include="zip_helpers.h" />
     <ClInclude Include="dyn_sdl.h" />
+    <ClInclude Include="dyn_libjpeg.h" />
+    <ClInclude Include="dyn_libwebp.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="state_wrapper.cpp" />

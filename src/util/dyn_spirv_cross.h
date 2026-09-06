@@ -7,7 +7,7 @@
 
 class Error;
 
-#define SPIRV_CROSS_FUNCTIONS(X)                                                                                       \
+#define DYN_SPIRV_CROSS_FUNCTIONS(X)                                                                                       \
   X(spvc_context_create)                                                                                               \
   X(spvc_context_destroy)                                                                                              \
   X(spvc_context_set_error_callback)                                                                                   \
@@ -34,24 +34,24 @@ class Error;
   X(spvc_resources_get_resource_list_for_type)
 
 #ifdef _WIN32
-#define SPIRV_CROSS_HLSL_FUNCTIONS(X)                                                                                  \
+#define DYN_SPIRV_CROSS_HLSL_FUNCTIONS(X)                                                                              \
   X(spvc_compiler_hlsl_add_resource_binding)                                                                           \
   X(spvc_compiler_hlsl_add_vertex_attribute_remap)
 #else
-#define SPIRV_CROSS_HLSL_FUNCTIONS(X)
+#define DYN_SPIRV_CROSS_HLSL_FUNCTIONS(X)
 #endif
 #ifdef __APPLE__
-#define SPIRV_CROSS_MSL_FUNCTIONS(X) X(spvc_compiler_msl_add_resource_binding)
+#define DYN_SPIRV_CROSS_MSL_FUNCTIONS(X) X(spvc_compiler_msl_add_resource_binding)
 #else
-#define SPIRV_CROSS_MSL_FUNCTIONS(X)
+#define DYN_SPIRV_CROSS_MSL_FUNCTIONS(X)
 #endif
 
 struct DynSpirvCross
 {
 #define ADD_FUNC(F) decltype(&::F) F;
-  SPIRV_CROSS_FUNCTIONS(ADD_FUNC)
-  SPIRV_CROSS_HLSL_FUNCTIONS(ADD_FUNC)
-  SPIRV_CROSS_MSL_FUNCTIONS(ADD_FUNC)
+  DYN_SPIRV_CROSS_FUNCTIONS(ADD_FUNC)
+  DYN_SPIRV_CROSS_HLSL_FUNCTIONS(ADD_FUNC)
+  DYN_SPIRV_CROSS_MSL_FUNCTIONS(ADD_FUNC)
 #undef ADD_FUNC
 
   bool Open(Error* error);

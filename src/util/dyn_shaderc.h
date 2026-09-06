@@ -33,6 +33,7 @@ struct DynShaderc
   shaderc_compiler_t compiler;
 
   bool Open(Error* error);
+  void Close();
 };
 
 extern DynShaderc g_dyn_shaderc;

@@ -13,7 +13,6 @@
 
 #include "common/assert.h"
 #include "common/bitutils.h"
-#include "common/dynamic_library.h"
 #include "common/error.h"
 #include "common/file_system.h"
 #include "common/gsvector.h"
@@ -134,13 +133,6 @@ static constexpr const std::array<ButtonInfo, SDL_GAMEPAD_BUTTON_COUNT> s_ps_but
 }};
 // clang-format on
 
-struct Locals
-{
-  // Dynamic libraries
-  DynamicLibrary sdl_library;
-  std::once_flag sdl_init_flag;
-};
-
 } // namespace
 
 static constexpr std::array<const char*, 4> s_sdl_hat_direction_names = {{
@@ -223,9 +215,6 @@ static constexpr const SettingInfo s_sdl_advanced_settings_info[] = {
 #endif
 };
 
-DynSDL g_dyn_sdl;
-static Locals s_sdl_locals;
-
 static bool IsPSControllerType(u8 type)
 {
   return (type >= SDL_GAMEPAD_TYPE_PS3 && type <= SDL_GAMEPAD_TYPE_PS5);
@@ -301,68 +290,6 @@ static const char* GetButtonIcon(u8 type, u32 button)
     str = IsPSControllerType(type) ? s_ps_button_info[button].icon : s_button_info[button].icon;
 
   return str;
-}
-
-static void SDLLogCallback(void* userdata, int category, SDL_LogPriority priority, const char* message)
-{
-  static constexpr Log::Level priority_map[SDL_LOG_PRIORITY_COUNT] = {
-    Log::Level::Debug,   // SDL_LOG_PRIORITY_INVALID
-    Log::Level::Trace,   // SDL_LOG_PRIORITY_TRACE
-    Log::Level::Verbose, // SDL_LOG_PRIORITY_VERBOSE
-    Log::Level::Debug,   // SDL_LOG_PRIORITY_DEBUG
-    Log::Level::Info,    // SDL_LOG_PRIORITY_INFO
-    Log::Level::Warning, // SDL_LOG_PRIORITY_WARN
-    Log::Level::Error,   // SDL_LOG_PRIORITY_ERROR
-    Log::Level::Error,   // SDL_LOG_PRIORITY_CRITICAL
-  };
-
-  GENERIC_LOG(Log::Channel::SDL, priority_map[priority], Log::Color::Default, message);
-}
-
-bool DynSDL::Open(Error* error)
-{
-  // Because of course friggin linux is different...
-#ifdef _WIN32
-  static constexpr int lib_major_version = -1;
-#else
-  static constexpr int lib_major_version = 0;
-#endif
-
-  if (s_sdl_locals.sdl_library.IsOpen())
-    return true;
-
-  std::call_once(s_sdl_locals.sdl_init_flag, [&error]() {
-    Error lerror;
-    DynamicLibrary lib;
-    if (!lib.Open(DynamicLibrary::GetVersionedFilename("SDL3", lib_major_version).c_str(), &lerror))
-    {
-      ERROR_LOG("Failed to load sqlite: {}", lerror.GetDescription());
-      Error::SetStringFmt(error, "Failed to load sqlite: {}", lerror.GetDescription());
-      return;
-    }
-
-    // clang-format off
-  static const DynamicLibrary::SymbolTable sdl_symbols[] = {
-#define SDL_SYMBOL(F) {#F, (void**)&g_dyn_sdl.F},
-    DYN_SDL_FUNCTIONS(SDL_SYMBOL)
-#undef SDL_SYMBOL
-  };
-    // clang-format on
-
-    if (!lib.ResolveSymbols(sdl_symbols, std::size(sdl_symbols), error))
-      return;
-
-    s_sdl_locals.sdl_library = std::move(lib);
-
-    g_dyn_sdl.SDL_SetLogOutputFunction(SDLLogCallback, nullptr);
-#if defined(_DEBUG) || defined(_DEVEL)
-    g_dyn_sdl.SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
-#else
-    g_dyn_sdl.SDL_SetLogPriorities(SDL_LOG_PRIORITY_INFO);
-#endif
-  });
-
-  return s_sdl_locals.sdl_library.IsOpen();
 }
 
 SDLInputSource::SDLInputSource() = default;

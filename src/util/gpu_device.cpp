@@ -11,7 +11,6 @@
 #include "shadergen.h"
 
 #include "common/assert.h"
-#include "common/dynamic_library.h"
 #include "common/error.h"
 #include "common/file_system.h"
 #include "common/hash_combine.h"
@@ -57,19 +56,11 @@ struct Locals
   std::array<u8, SHA1Digest::DIGEST_SIZE> pipeline_cache_hash;
 
   // Dynamic libraries
-  DynamicLibrary shaderc_library;
-  DynamicLibrary spirv_cross_library;
-  std::once_flag shaderc_init_flag;
-  std::once_flag spirv_cross_init_flag;
+
 };
 } // namespace
 
 ALIGN_TO_CACHE_LINE static Locals s_locals;
-
-static_assert(std::is_trivially_copyable_v<DynShaderc> && std::is_standard_layout_v<DynShaderc>);
-static_assert(std::is_trivially_copyable_v<DynSpirvCross> && std::is_standard_layout_v<DynSpirvCross>);
-DynShaderc g_dyn_shaderc;
-DynSpirvCross g_dyn_spirv_cross;
 
 size_t GPUDevice::s_total_vram_usage = 0;
 GPUDevice::Statistics GPUDevice::s_stats = {};
@@ -1395,85 +1386,6 @@ std::unique_ptr<GPUDevice> GPUDevice::CreateDeviceForAPI(RenderAPI api)
   }
 }
 
-bool DynShaderc::Open(Error* error)
-{
-  if (compiler)
-    return true;
-
-  std::call_once(s_locals.shaderc_init_flag, [&error]() {
-    Error lerror;
-    DynamicLibrary lib;
-    if (!lib.Open(DynamicLibrary::GetVersionedFilename("shaderc_shared").c_str(), error))
-    {
-      ERROR_LOG("Failed to load shaderc: {}", (error ? error : &lerror)->GetDescription());
-      Error::AddPrefix(error, "Failed to load shaderc: ");
-      return;
-    }
-
-    static const DynamicLibrary::SymbolTable shaderc_symbols[] = {
-#define SHADERC_SYMBOL(F) {#F, (void**)&g_dyn_shaderc.F},
-      DYN_SHADERC_FUNCTIONS(SHADERC_SYMBOL)
-#undef SHADERC_SYMBOL
-    };
-
-    if (!lib.ResolveSymbols(shaderc_symbols, error))
-      return;
-
-    g_dyn_shaderc.compiler = g_dyn_shaderc.shaderc_compiler_initialize();
-    if (!g_dyn_shaderc.compiler)
-    {
-      ERROR_LOG("shaderc_compiler_initialize() failed");
-      Error::SetStringView(error, "shaderc_compiler_initialize() failed");
-      DynamicLibrary::ClearSymbols(shaderc_symbols);
-      return;
-    }
-
-    s_locals.shaderc_library = std::move(lib);
-  });
-
-  return (compiler != nullptr);
-}
-
-bool DynSpirvCross::Open(Error* error)
-{
-  if (s_locals.spirv_cross_library.IsOpen())
-    return true;
-
-  std::call_once(s_locals.spirv_cross_init_flag, [&error]() {
-    Error lerror;
-    DynamicLibrary lib;
-#if defined(_WIN32) || defined(__ANDROID__)
-    // SPVC's build on Windows doesn't spit out a versioned DLL.
-    const std::string libpath = DynamicLibrary::GetVersionedFilename("spirv-cross-c-shared");
-#else
-    const std::string libpath = DynamicLibrary::GetVersionedFilename("spirv-cross-c-shared", SPVC_C_API_VERSION_MAJOR);
-#endif
-    if (!lib.Open(libpath.c_str(), error ? error : &lerror))
-    {
-      ERROR_LOG("Failed to load spirv-cross: {}", (error ? error : &lerror)->GetDescription());
-      Error::AddPrefix(error, "Failed to load spirv-cross: ");
-      return;
-    }
-
-    // clang-format off
-  static const DynamicLibrary::SymbolTable spirv_cross_symbols[] = {
-#define SPIRV_CROSS_SYMBOL(F) {#F, (void**)&g_dyn_spirv_cross.F},
-    SPIRV_CROSS_FUNCTIONS(SPIRV_CROSS_SYMBOL)
-    SPIRV_CROSS_HLSL_FUNCTIONS(SPIRV_CROSS_SYMBOL)
-    SPIRV_CROSS_MSL_FUNCTIONS(SPIRV_CROSS_SYMBOL)
-#undef SPIRV_CROSS_SYMBOL
-  };
-    // clang-format on
-
-    if (!lib.ResolveSymbols(spirv_cross_symbols, std::size(spirv_cross_symbols), error))
-      return;
-
-    s_locals.spirv_cross_library = std::move(lib);
-  });
-
-  return s_locals.spirv_cross_library.IsOpen();
-}
-
 std::optional<DynamicHeapArray<u8>> GPUDevice::OptimizeVulkanSpv(const std::span<const u8> spirv, Error* error)
 {
   std::optional<DynamicHeapArray<u8>> ret;
@@ -2060,13 +1972,7 @@ void GPUDevice::UnloadDynamicLibraries()
 {
   Assert(!g_gpu_device);
 
-  g_dyn_spirv_cross = {};
-  s_locals.spirv_cross_library.Close();
-
-  if (g_dyn_shaderc.compiler)
-    g_dyn_shaderc.shaderc_compiler_release(g_dyn_shaderc.compiler);
-  g_dyn_shaderc = {};
-  s_locals.shaderc_library.Close();
+  g_dyn_shaderc.Close();
 
 #ifdef ENABLE_VULKAN
   VulkanLoader::DestroyVulkanInstance();

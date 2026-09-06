@@ -3,7 +3,6 @@
 
 #include "sqlite_helpers.h"
 
-#include "common/dynamic_library.h"
 #include "common/error.h"
 #include "common/file_system.h"
 #include "common/log.h"
@@ -13,59 +12,6 @@
 #include <type_traits>
 
 LOG_CHANNEL(Host);
-
-namespace {
-struct Locals
-{
-  // Dynamic libraries
-  DynamicLibrary sqlite_library;
-  std::once_flag sqlite_init_flag;
-};
-} // namespace
-
-static Locals s_locals;
-
-static_assert(std::is_trivially_copyable_v<DynSqlite> && std::is_standard_layout_v<DynSqlite>);
-DynSqlite g_dyn_sqlite;
-
-bool DynSqlite::Open(Error* error)
-{
-  // Because of course friggin linux is different...
-#ifdef _WIN32
-  static constexpr int lib_major_version = -1;
-#else
-  static constexpr int lib_major_version = 3;
-#endif
-
-  if (s_locals.sqlite_library.IsOpen())
-    return true;
-
-  std::call_once(s_locals.sqlite_init_flag, [&error]() {
-    Error lerror;
-    DynamicLibrary lib;
-    if (!lib.Open(DynamicLibrary::GetVersionedFilename("sqlite3", lib_major_version).c_str(), &lerror))
-    {
-      ERROR_LOG("Failed to load sqlite: {}", lerror.GetDescription());
-      Error::SetStringFmt(error, "Failed to load sqlite: {}", lerror.GetDescription());
-      return;
-    }
-
-    // clang-format off
-  static const DynamicLibrary::SymbolTable sqlite_symbols[] = {
-#define SQLITE_SYMBOL(F) {#F, (void**)&g_dyn_sqlite.F},
-    DYN_SQLITE_FUNCTIONS(SQLITE_SYMBOL)
-#undef SQLITE_SYMBOL
-  };
-    // clang-format on
-
-    if (!lib.ResolveSymbols(sqlite_symbols, std::size(sqlite_symbols), error))
-      return;
-
-    s_locals.sqlite_library = std::move(lib);
-  });
-
-  return s_locals.sqlite_library.IsOpen();
-}
 
 sqlite3* SQLiteHelpers::OpenAndCheckDatabase(const char* const path, Error* const error)
 {
