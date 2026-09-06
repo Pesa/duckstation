@@ -887,8 +887,9 @@ void MainWindow::populateGameListContextMenu(const GameList::Entry* entry, QWidg
 {
   QAction* resume_action = nullptr;
   QMenu* load_state_menu = nullptr;
+  const bool is_game = entry->IsGame();
 
-  if (!entry->IsDiscSet())
+  if (!entry->IsDiscSet() && is_game)
   {
     resume_action = menu->addAction(tr("Resume"));
     resume_action->setEnabled(false);
@@ -897,53 +898,52 @@ void MainWindow::populateGameListContextMenu(const GameList::Entry* entry, QWidg
     load_state_menu->setEnabled(false);
     QtUtils::StylePopupMenu(load_state_menu);
 
-    if (!entry->serial.empty())
+    std::vector<SaveStateInfo> available_states(System::GetAvailableSaveStates(entry->serial));
+    for (SaveStateInfo& ssi : available_states)
     {
-      std::vector<SaveStateInfo> available_states(System::GetAvailableSaveStates(entry->serial));
-      for (SaveStateInfo& ssi : available_states)
+      if (ssi.global)
+        continue;
+
+      const s32 slot = ssi.slot;
+      const TinyString timestamp_str = Host::FormatRelativeDateTime(ssi.timestamp, false, true);
+
+      QAction* action;
+      if (slot < 0)
       {
-        if (ssi.global)
-          continue;
-
-        const s32 slot = ssi.slot;
-        const TinyString timestamp_str = Host::FormatRelativeDateTime(ssi.timestamp, false, true);
-
-        QAction* action;
-        if (slot < 0)
-        {
-          resume_action->setText(tr("Resume (%1)").arg(QtUtils::StringViewToQStringView(timestamp_str)));
-          action = resume_action;
-        }
-        else
-        {
-          load_state_menu->setEnabled(true);
-          action = load_state_menu->addAction(
-            tr("Game Save %1 (%2)").arg(slot).arg(QtUtils::StringViewToQStringView(timestamp_str)));
-        }
-
-        action->setDisabled(s_locals.achievements_hardcore_mode);
-        connect(action, &QAction::triggered, [this, game_path = entry->path, path = std::move(ssi.path)]() mutable {
-          startFile(std::move(game_path), std::move(path), std::nullopt);
-        });
+        resume_action->setText(tr("Resume (%1)").arg(QtUtils::StringViewToQStringView(timestamp_str)));
+        action = resume_action;
       }
+      else
+      {
+        load_state_menu->setEnabled(true);
+        action = load_state_menu->addAction(
+          tr("Game Save %1 (%2)").arg(slot).arg(QtUtils::StringViewToQStringView(timestamp_str)));
+      }
+
+      action->setDisabled(s_locals.achievements_hardcore_mode);
+      connect(action, &QAction::triggered, [this, game_path = entry->path, path = std::move(ssi.path)]() mutable {
+        startFile(std::move(game_path), std::move(path), std::nullopt);
+      });
     }
   }
 
-  QAction* open_memory_cards_action = menu->addAction(tr("Edit Memory Cards..."));
-  connect(open_memory_cards_action, &QAction::triggered, [path = entry->path]() {
-    const auto lock = GameList::GetLock();
-    const GameList::Entry* entry = GameList::GetEntryForPath(path);
-    if (!entry)
-      return;
+  if (is_game)
+  {
+    menu->addAction(tr("Edit Memory Cards..."), [path = entry->path]() {
+      const auto lock = GameList::GetLock();
+      const GameList::Entry* entry = GameList::GetEntryForPath(path);
+      if (!entry)
+        return;
 
-    QString paths[2];
-    for (u32 i = 0; i < 2; i++)
-      paths[i] = QString::fromStdString(System::GetGameMemoryCardPath(entry->title, entry->serial, entry->path, i));
+      QString paths[2];
+      for (u32 i = 0; i < 2; i++)
+        paths[i] = QString::fromStdString(System::GetGameMemoryCardPath(entry->title, entry->serial, entry->path, i));
 
-    g_main_window->openMemoryCardEditor(paths[0], paths[1]);
-  });
+      g_main_window->openMemoryCardEditor(paths[0], paths[1]);
+    });
+  }
 
-  if (!entry->IsDiscSet())
+  if (!entry->IsDiscSet() && is_game)
   {
     const bool has_any_states = resume_action->isEnabled() || load_state_menu->isEnabled();
     QAction* delete_save_states_action = menu->addAction(tr("Delete Save States"));
@@ -1682,14 +1682,17 @@ void MainWindow::onGameListEntryContextMenuRequested(const QPoint& point)
 
     if (!entry->IsDiscSet())
     {
-      menu->addAction(tr("Properties..."), [qpath]() {
-        const auto lock = GameList::GetLock();
-        const GameList::Entry* entry = GameList::GetEntryForPath(qpath.toStdString());
-        if (!entry || !g_main_window)
-          return;
+      if (entry->IsGame())
+      {
+        menu->addAction(tr("Properties..."), [qpath]() {
+          const auto lock = GameList::GetLock();
+          const GameList::Entry* entry = GameList::GetEntryForPath(qpath.toStdString());
+          if (!entry || !g_main_window)
+            return;
 
-        SettingsWindow::openGamePropertiesDialog(entry);
-      });
+          SettingsWindow::openGamePropertiesDialog(entry);
+        });
+      }
 
       menu->addAction(tr("Open Containing Directory..."), [this, qpath]() {
         const QFileInfo fi(qpath);
@@ -1793,14 +1796,17 @@ void MainWindow::onGameListEntryContextMenuRequested(const QPoint& point)
     menu->addAction(tr("Exclude From List"),
                     [this, qpath]() { getSettingsWindow()->getGameListSettingsWidget()->addExcludedPath(qpath); });
 
-    menu->addAction(tr("Reset Play Time"), [this, qpath]() {
-      const auto lock = GameList::GetLock();
-      const GameList::Entry* entry = GameList::GetEntryForPath(qpath.toStdString());
-      if (!entry)
-        return;
+    if (entry->IsGame())
+    {
+      menu->addAction(tr("Reset Play Time"), [this, qpath]() {
+        const auto lock = GameList::GetLock();
+        const GameList::Entry* entry = GameList::GetEntryForPath(qpath.toStdString());
+        if (!entry)
+          return;
 
-      clearGameListEntryPlayTime(entry);
-    });
+        clearGameListEntryPlayTime(entry);
+      });
+    }
   }
 
   menu->addSeparator();

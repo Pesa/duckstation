@@ -76,6 +76,8 @@ struct Entry
 
   std::string GetReleaseDateString() const;
 
+  bool IsGame() const;
+
   ALWAYS_INLINE bool IsValid() const { return (type < EntryType::MaxCount); }
   ALWAYS_INLINE bool IsDisc() const { return (type == EntryType::Disc); }
   ALWAYS_INLINE bool IsDiscSet() const { return (type == EntryType::DiscSet); }

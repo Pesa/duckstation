@@ -966,7 +966,41 @@ void FullscreenUI::HandleGameListActivate(const GameList::Entry* entry)
 
 void FullscreenUI::HandleGameListOptions(const GameList::Entry* entry)
 {
-  if (!entry->IsDiscSet())
+  if (entry->IsDiscSet())
+  {
+    ChoiceDialogOptions options = {
+      {FSUI_ICONSTR(ICON_FA_WRENCH, "Game Properties"), false},
+      {FSUI_ICONSTR(ICON_FA_IMAGE, "Set Cover Image"), false},
+      {FSUI_ICONSTR(ICON_FA_COMPACT_DISC, "Select Disc"), false},
+    };
+
+    const GameDatabase::DiscSetEntry* dsentry = entry->dbentry->disc_set;
+    OpenChoiceDialog(entry->GetDisplayTitle(GameList::ShouldShowLocalizedTitles()), false, std::move(options),
+                     [dsentry](s32 index, const std::string& title, bool checked) mutable {
+                       switch (index)
+                       {
+                         case 0: // Open Game Properties
+                           BeginTransition([dsentry]() {
+                             // shouldn't fail
+                             const GameList::Entry* first_disc_entry = GameList::GetFirstDiscSetMember(dsentry);
+                             if (!first_disc_entry)
+                               return;
+
+                             SwitchToGameSettingsForPath(first_disc_entry->path);
+                           });
+                           break;
+                         case 1: // Set Cover Image
+                           DoSetCoverImage(std::string(dsentry->GetSaveTitle()));
+                           break;
+                         case 2: // Select Disc
+                           HandleSelectDiscForDiscSet(dsentry);
+                           break;
+                         default:
+                           break;
+                       }
+                     });
+  }
+  else if (entry->IsGame())
   {
     ChoiceDialogOptions options = {
       {FSUI_ICONSTR(ICON_FA_WRENCH, "Game Properties"), false},
@@ -1022,31 +1056,31 @@ void FullscreenUI::HandleGameListOptions(const GameList::Entry* entry)
   else
   {
     ChoiceDialogOptions options = {
-      {FSUI_ICONSTR(ICON_FA_WRENCH, "Game Properties"), false},
+      {FSUI_ICONSTR(ICON_FA_FOLDER_OPEN, "Open Containing Directory"), false},
       {FSUI_ICONSTR(ICON_FA_IMAGE, "Set Cover Image"), false},
-      {FSUI_ICONSTR(ICON_FA_COMPACT_DISC, "Select Disc"), false},
+      {FSUI_ICONSTR(ICON_FA_COMPACT_DISC, "Default Boot"), false},
+      {FSUI_ICONSTR(ICON_FA_BOLT, "Fast Boot"), false},
+      {FSUI_ICONSTR(ICON_FA_HOURGLASS, "Slow Boot"), false},
     };
 
-    const GameDatabase::DiscSetEntry* dsentry = entry->dbentry->disc_set;
     OpenChoiceDialog(entry->GetDisplayTitle(GameList::ShouldShowLocalizedTitles()), false, std::move(options),
-                     [dsentry](s32 index, const std::string& title, bool checked) mutable {
+                     [entry_path = entry->path](s32 index, const std::string& title, bool checked) mutable {
                        switch (index)
                        {
-                         case 0: // Open Game Properties
-                           BeginTransition([dsentry]() {
-                             // shouldn't fail
-                             const GameList::Entry* first_disc_entry = GameList::GetFirstDiscSetMember(dsentry);
-                             if (!first_disc_entry)
-                               return;
-
-                             SwitchToGameSettingsForPath(first_disc_entry->path);
-                           });
+                         case 0: // Open Containing Directory
+                           ExitFullscreenAndOpenURL(Path::CreateFileURL(Path::GetDirectory(entry_path)));
                            break;
                          case 1: // Set Cover Image
-                           DoSetCoverImage(std::string(dsentry->GetSaveTitle()));
+                           DoSetCoverImage(std::move(entry_path));
                            break;
-                         case 2: // Select Disc
-                           HandleSelectDiscForDiscSet(dsentry);
+                         case 2: // Default Boot
+                           DoStartPath(entry_path);
+                           break;
+                         case 3: // Fast Boot
+                           DoStartPath(entry_path, {}, true);
+                           break;
+                         case 4: // Slow Boot
+                           DoStartPath(entry_path, {}, false);
                            break;
                          default:
                            break;

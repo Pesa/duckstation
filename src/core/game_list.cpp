@@ -1463,6 +1463,11 @@ std::string GameList::Entry::GetReleaseDateString() const
   return ret;
 }
 
+bool GameList::Entry::IsGame() const
+{
+  return (type != EntryType::PSF && type != EntryType::AudioCD && !serial.empty());
+}
+
 std::string GameList::GetPlayedTimePath()
 {
   return Path::Combine(EmuFolders::DataRoot, "playtime.dat");
