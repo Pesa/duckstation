@@ -23,10 +23,10 @@ enum class EntryType : u8
 {
   Disc,
   DiscSet,
+  AudioCD,
   PSExe,
   Playlist,
   PSF,
-  AudioCD,
   MaxCount
 };
 

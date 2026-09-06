@@ -58,7 +58,7 @@ namespace {
 enum : u32
 {
   GAME_LIST_CACHE_SIGNATURE = 0x45434C48,
-  GAME_LIST_CACHE_VERSION = 39,
+  GAME_LIST_CACHE_VERSION = 40,
 
   PLAYED_TIME_SERIAL_LENGTH = 32,
   PLAYED_TIME_LAST_TIME_LENGTH = 20,  // uint64
@@ -171,10 +171,10 @@ const char* GameList::GetEntryTypeName(EntryType type)
   static std::array<const char*, static_cast<int>(EntryType::MaxCount)> names = {{
     "Disc",
     "DiscSet",
+    "AudioCD",
     "PSExe",
     "Playlist",
     "PSF",
-    "AudioCD",
   }};
   return names[static_cast<size_t>(type)];
 }
@@ -184,10 +184,10 @@ const char* GameList::GetEntryTypeDisplayName(EntryType type)
   static std::array<const char*, static_cast<int>(EntryType::MaxCount)> names = {{
     TRANSLATE_DISAMBIG_NOOP("GameList", "Disc", "EntryType"),
     TRANSLATE_DISAMBIG_NOOP("GameList", "Disc Set", "EntryType"),
+    TRANSLATE_DISAMBIG_NOOP("GameList", "Audio CD", "EntryType"),
     TRANSLATE_DISAMBIG_NOOP("GameList", "PS-EXE", "EntryType"),
     TRANSLATE_DISAMBIG_NOOP("GameList", "Playlist", "EntryType"),
     TRANSLATE_DISAMBIG_NOOP("GameList", "PSF", "EntryType"),
-    TRANSLATE_DISAMBIG_NOOP("GameList", "Audio CD", "EntryType"),
   }};
   return Host::TranslateToCString("GameList", names[static_cast<size_t>(type)], "EntryType");
 }
