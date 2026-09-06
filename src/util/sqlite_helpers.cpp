@@ -56,6 +56,7 @@ bool DynSqlite::Open(Error* error)
     DYN_SQLITE_FUNCTIONS(SQLITE_SYMBOL)
 #undef SQLITE_SYMBOL
   };
+    // clang-format on
 
     if (!lib.ResolveSymbols(sqlite_symbols, std::size(sqlite_symbols), error))
       return;
@@ -72,18 +73,18 @@ sqlite3* SQLiteHelpers::OpenAndCheckDatabase(const char* const path, Error* cons
     return nullptr;
 
   sqlite3* db = nullptr;
-  int rc = g_dyn_sqlite.sqlite3_open_v2(path, &db,
-                                        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nullptr);
+  int rc =
+    g_dyn_sqlite.sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nullptr);
 
   // Sanity check on the database.
   if (rc == SQLITE_OK)
   {
-    const int check_rc =
-      g_dyn_sqlite.sqlite3_exec(db, "PRAGMA schema_version;", nullptr, nullptr, nullptr);
+    const int check_rc = g_dyn_sqlite.sqlite3_exec(db, "PRAGMA schema_version;", nullptr, nullptr, nullptr);
     if (check_rc != SQLITE_OK)
     {
       const char* errmsg = g_dyn_sqlite.sqlite3_errmsg(db);
-      WARNING_LOG("Database {} failed sanity check, rc={}: {}", Path::GetFileName(path), check_rc, errmsg ? errmsg : "<unknown error>");
+      WARNING_LOG("Database {} failed sanity check, rc={}: {}", Path::GetFileName(path), check_rc,
+                  errmsg ? errmsg : "<unknown error>");
       g_dyn_sqlite.sqlite3_close(db);
       rc = SQLITE_NOTADB;
     }
@@ -99,8 +100,8 @@ sqlite3* SQLiteHelpers::OpenAndCheckDatabase(const char* const path, Error* cons
     }
     else
     {
-      rc = g_dyn_sqlite.sqlite3_open_v2(path, &db,
-                                        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nullptr);
+      rc = g_dyn_sqlite.sqlite3_open_v2(path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX,
+                                        nullptr);
     }
   }
 
@@ -121,7 +122,7 @@ void SQLiteHelpers::SetError(Error* const error, sqlite3* const db, std::string_
   if (!prefix.empty())
     Error::SetStringFmt(error, "{}{}", prefix, errmsg ? errmsg : "<unknown error>");
   else if (errmsg)
-    Error::SetStringView(error, errmsg ? errmsg : "<unknown error>");   
+    Error::SetStringView(error, errmsg ? errmsg : "<unknown error>");
 }
 
 bool SQLiteHelpers::Execute(sqlite3* const db, const char* sql, Error* const error /*= nullptr*/)
