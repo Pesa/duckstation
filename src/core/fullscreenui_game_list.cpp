@@ -1185,6 +1185,7 @@ GPUTexture* FullscreenUI::GetTextureForGameListEntryType(GameList::EntryType typ
       return GetCachedTexture("fullscreenui/playlist-file.png");
 
     case GameList::EntryType::PSF:
+    case GameList::EntryType::AudioCD:
       return GetCachedTexture("fullscreenui/psf-file.png");
 
     case GameList::EntryType::Disc:

@@ -26,6 +26,7 @@ enum class EntryType : u8
   PSExe,
   Playlist,
   PSF,
+  AudioCD,
   MaxCount
 };
 

@@ -174,6 +174,7 @@ const char* GameList::GetEntryTypeName(EntryType type)
     "PSExe",
     "Playlist",
     "PSF",
+    "AudioCD",
   }};
   return names[static_cast<size_t>(type)];
 }
@@ -186,6 +187,7 @@ const char* GameList::GetEntryTypeDisplayName(EntryType type)
     TRANSLATE_DISAMBIG_NOOP("GameList", "PS-EXE", "EntryType"),
     TRANSLATE_DISAMBIG_NOOP("GameList", "Playlist", "EntryType"),
     TRANSLATE_DISAMBIG_NOOP("GameList", "PSF", "EntryType"),
+    TRANSLATE_DISAMBIG_NOOP("GameList", "Audio CD", "EntryType"),
   }};
   return Host::TranslateToCString("GameList", names[static_cast<size_t>(type)], "EntryType");
 }
@@ -336,6 +338,16 @@ bool GameList::GetDiscListEntry(const std::string& path, Entry* entry)
   entry->path = path;
   entry->file_size = cdi->GetSizeOnDisk();
   entry->uncompressed_size = static_cast<u64>(CDImage::RAW_SECTOR_SIZE) * static_cast<u64>(cdi->GetLBACount());
+
+  // audio cd?
+  if (cdi->GetTrack(1).mode == CDImage::TrackMode::Audio)
+  {
+    entry->title = Path::GetFileTitle(path);
+    entry->type = EntryType::AudioCD;
+    return true;
+  }
+
+  // probably a game disc
   entry->type = EntryType::Disc;
 
   // use the same buffer for game and achievement hashing, to avoid double decompression

@@ -555,6 +555,8 @@ QIcon QtUtils::GetIconForEntryType(GameList::EntryType type)
       return QIcon(u":/icons/monochrome/svg/multi-discs.svg"_s);
     case GameList::EntryType::PSF:
       return QIcon(u":/icons/monochrome/svg/file-music-line.svg"_s);
+    case GameList::EntryType::AudioCD:
+      return QIcon(u":/icons/monochrome/svg/disc-audio-line.svg"_s);
     case GameList::EntryType::PSExe:
     default:
       return QIcon(u":/icons/monochrome/svg/settings-3-line.svg"_s);
