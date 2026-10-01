@@ -13,11 +13,16 @@
   <property name="acceptDrops">
    <bool>true</bool>
   </property>
-  <property name="unifiedTitleAndToolBarOnMac">
-   <bool>true</bool>
-  </property>
   <widget class="QStackedWidget" name="mainContainer"/>
   <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>24</height>
+    </rect>
+   </property>
    <widget class="QMenu" name="menuSystem">
     <property name="title">
      <string>&amp;System</string>
